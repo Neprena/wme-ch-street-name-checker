@@ -391,7 +391,7 @@ export class TabUI {
     }
   }
 
-  private selectNextIssue(): void {
+  selectNextIssue(): void {
     if (this.orderedIssueIds.length === 0) return;
     this.nextIssuePointer = (this.nextIssuePointer + 1) % this.orderedIssueIds.length;
     const segmentId = this.orderedIssueIds[this.nextIssuePointer];

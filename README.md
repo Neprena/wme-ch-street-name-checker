@@ -18,6 +18,7 @@ Compare les noms de rues des segments visibles avec le **répertoire officiel de
 - Onglet latéral **CH Names**: compteurs filtrables, liste groupée par `nom actuel → nom officiel`, clic = sélection du segment, bouton ⌖ = centrer la carte, bouton "Écart suivant".
 - Encadré dans le panneau d'édition: à la sélection d'un segment, verdict du scan (statut, explication, suggestion) avec boutons Corriger / Tout corriger (désactivable).
 - Interrupteurs en tête d'onglet: "Actif" (coupe tout: scan, couche, encadré) et "Scan auto" (désactivé = scan manuel via Rescanner). Décocher la couche masque aussi l'encadré.
+- Raccourcis clavier (remappables dans les réglages WME): Alt+N = écart suivant, Alt+F = corriger le segment sélectionné. Cache persistant (IndexedDB): les zones scannées survivent au rechargement de WME pendant 24 h.
 - Correction 1-clic par segment ou par groupe (cap 25, confirmation au-delà de 5). **Rien n'est sauvegardé automatiquement**: les modifications entrent dans la pile d'édition WME, tu relis et sauves toi-même (Ctrl+S, undo natif).
 - Matching géométrique (désactivable): les axes officiels sont appariés spatialement aux segments — suggestions 1-clic pour les segments sans nom, détection de la mauvaise rue, désambiguïsation par distance.
 - Communes bilingues (Biel/Bienne…): les libellés officiels `A/B` sont acceptés en entier et pour chaque partie; un nom alternatif Waze qui correspond compte comme OK (réglable).
@@ -61,6 +62,7 @@ Vergleicht die Strassennamen der sichtbaren Segmente mit dem **amtlichen Strasse
 - Seitentab **CH Names**: filterbare Zähler, gruppierte Liste `aktueller Name → amtlicher Name`, Klick = Segment auswählen, ⌖ = Karte zentrieren, "Nächste Abweichung".
 - Box im Bearbeitungspanel: bei Auswahl eines Segments erscheint das Scan-Ergebnis (Status, Erklärung, Vorschlag) mit Korrigieren / Alle korrigieren (abschaltbar).
 - Hauptschalter oben im Tab: "Aktiv" (deaktiviert alles) und "Auto-Scan" (aus = nur manuell per Neu scannen). Eine deaktivierte Ebene blendet auch die Box aus.
+- Tastaturkürzel (in den WME-Einstellungen anpassbar): Alt+N = nächste Abweichung, Alt+F = ausgewähltes Segment korrigieren. Persistenter Cache (IndexedDB): gescannte Gebiete überleben einen WME-Reload 24 h lang.
 - 1-Klick-Korrektur pro Segment oder Gruppe (max. 25, Bestätigung ab 5). **Nichts wird automatisch gespeichert**: Änderungen landen im WME-Bearbeitungsstapel — prüfen und selbst speichern (Ctrl+S, natives Undo).
 - Geometrie-Matching (abschaltbar): amtliche Strassenachsen werden räumlich den Segmenten zugeordnet — 1-Klick-Vorschläge für unbenannte Segmente, Falsche-Strasse-Erkennung, Distanz-Disambiguierung.
 - Zweisprachige Gemeinden (Biel/Bienne…): amtliche `A/B`-Bezeichnungen werden als Ganzes und je Teil akzeptiert; ein passender Alternativname zählt als OK (einstellbar).
@@ -104,6 +106,7 @@ Confronta i nomi delle strade dei segmenti visibili con il **repertorio ufficial
 - Scheda laterale **CH Names**: contatori filtrabili, elenco raggruppato `nome attuale → nome ufficiale`, clic = seleziona il segmento, ⌖ = centra la mappa, "Prossima differenza".
 - Riquadro nel pannello di modifica: selezionando un segmento appare il verdetto della scansione (stato, spiegazione, proposta) con Correggi / Correggi tutti (disattivabile).
 - Interruttori in cima alla scheda: "Attivo" (disattiva tutto) e "Scansione auto" (off = solo manuale con Riscansiona). Nascondere il livello nasconde anche il riquadro.
+- Scorciatoie da tastiera (rimappabili nelle impostazioni WME): Alt+N = prossima differenza, Alt+F = correggi il segmento selezionato. Cache persistente (IndexedDB): le zone scansionate sopravvivono al ricaricamento di WME per 24 h.
 - Correzione in 1 clic per segmento o per gruppo (max 25, conferma oltre 5). **Nulla viene salvato automaticamente**: le modifiche entrano nello stack di WME — rivedi e salva tu stesso (Ctrl+S, undo nativo).
 - Matching geometrico (disattivabile): gli assi ufficiali sono abbinati spazialmente ai segmenti — suggerimenti in 1 clic per i segmenti senza nome, rilevamento della strada errata, disambiguazione per distanza.
 - Comuni bilingui (Biel/Bienne…): le denominazioni ufficiali `A/B` sono accettate per intero e per ciascuna parte; un nome alternativo corrispondente conta come OK (regolabile).
@@ -147,6 +150,7 @@ Compares the street names of visible segments with the Swiss federal **official 
 - **CH Names** sidebar tab: filterable counters, list grouped by `current name → official name`, click = select the segment, ⌖ = center the map, "Next issue".
 - Box in the edit panel: selecting a segment shows the scan verdict (status, explanation, suggestion) with Fix / Fix all buttons (toggleable).
 - Master toggles at the top of the tab: "Enabled" (turns everything off) and "Auto scan" (off = manual Rescan only). Unchecking the layer also hides the box.
+- Keyboard shortcuts (remappable in the WME settings): Alt+N = next issue, Alt+F = fix the selected segment. Persistent cache (IndexedDB): scanned areas survive a WME reload for 24 h.
 - One-click fix per segment or per group (capped at 25, confirmation above 5). **Nothing is ever auto-saved**: edits go into the WME edit stack — review and save yourself (Ctrl+S, native undo).
 - Geometry matching (toggleable): official street axes are matched spatially against segments — one-click suggestions for unnamed segments, wrong-street detection, distance disambiguation.
 - Bilingual communes (Biel/Bienne…): official `A/B` labels accepted as a whole and per part; a matching alternate name counts as OK (configurable).

@@ -1,7 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { TILE_SIZE_DEG, TileCache, TileFetcher, tileKeyForPoint, tileKeyToBbox, tileKeysForBbox } from "../src/geoadmin/tiles";
 import type { Bbox } from "../src/geoadmin/types";
+import type { PersistedTile, TileStoreLike } from "../src/geoadmin/idb-store";
 import { makeOfficial } from "./fixtures/swiss-names";
+
+class FakeStore implements TileStoreLike {
+  map = new Map<string, PersistedTile>();
+  pruned = 0;
+  async get(key: string): Promise<PersistedTile | undefined> {
+    return this.map.get(key);
+  }
+  async set(tile: PersistedTile): Promise<void> {
+    this.map.set(tile.key, tile);
+  }
+  async clear(): Promise<void> {
+    this.map.clear();
+  }
+  async prune(): Promise<void> {
+    this.pruned++;
+  }
+}
 
 describe("tileKeysForBbox", () => {
   it("returns a single tile for a tiny bbox", () => {
@@ -81,5 +99,63 @@ describe("TileFetcher", () => {
     );
     expect(progress[0]).toEqual([0, 1]);
     expect(progress.at(-1)).toEqual([1, 1]);
+  });
+});
+
+describe("TileFetcher with a persistent store", () => {
+  const bbox: Bbox = [6.631, 46.521, 6.632, 46.522]; // single tile
+
+  it("prunes the store at construction", () => {
+    const store = new FakeStore();
+    new TileFetcher(new TileCache(10, 60_000, () => 0), async () => [], store);
+    expect(store.pruned).toBe(1);
+  });
+
+  it("writes fetched tiles to the store and reads them back without network", async () => {
+    const store = new FakeStore();
+    let calls = 0;
+    const fetcher = new TileFetcher(new TileCache(10, 60_000), async () => {
+      calls++;
+      return [makeOfficial("Rue Persistée")];
+    }, store);
+    await fetcher.fetchBbox(bbox);
+    expect(calls).toBe(1);
+    expect(store.map.size).toBe(1);
+
+    // simulate a reload: fresh memory cache, same store
+    const fetcher2 = new TileFetcher(new TileCache(10, 60_000), async () => {
+      calls++;
+      return [];
+    }, store);
+    const entries = await fetcher2.fetchBbox(bbox);
+    expect(calls).toBe(1); // served from the persistent store
+    expect(entries.map((e) => e.label)).toEqual(["Rue Persistée"]);
+  });
+
+  it("refetches when the persisted tile is older than the TTL", async () => {
+    const store = new FakeStore();
+    const keys = tileKeysForBbox(bbox);
+    store.map.set(keys[0] as string, {
+      key: keys[0] as string,
+      entries: [makeOfficial("Rue Périmée")],
+      fetchedAt: Date.now() - 25 * 60 * 60 * 1000,
+    });
+    let calls = 0;
+    const fetcher = new TileFetcher(new TileCache(10, 60_000), async () => {
+      calls++;
+      return [makeOfficial("Rue Fraîche")];
+    }, store);
+    const entries = await fetcher.fetchBbox(bbox);
+    expect(calls).toBe(1);
+    expect(entries.map((e) => e.label)).toEqual(["Rue Fraîche"]);
+  });
+
+  it("clearAll drops both levels", async () => {
+    const store = new FakeStore();
+    const fetcher = new TileFetcher(new TileCache(10, 60_000), async () => [makeOfficial("X")], store);
+    await fetcher.fetchBbox(bbox);
+    expect(store.map.size).toBe(1);
+    fetcher.clearAll();
+    expect(store.map.size).toBe(0);
   });
 });

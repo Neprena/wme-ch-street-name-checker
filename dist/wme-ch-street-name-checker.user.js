@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WME CH Street Name Checker
 // @namespace    https://github.com/Neprena
-// @version      1.0.0
+// @version      1.1.0
 // @description  Validates Waze street names against the official Swiss street register (répertoire officiel des rues, swisstopo / geo.admin.ch)
 // @author       Yann Rapenne
 // @license      MIT
@@ -30,6 +30,68 @@
     info: (...args) => console.log(PREFIX, ...args),
     warn: (...args) => console.warn(PREFIX, ...args),
     error: (...args) => console.error(PREFIX, ...args)
+  };
+
+  // src/geoadmin/idb-store.ts
+  var DB_NAME = "wme-ch-name-check";
+  var STORE_NAME = "tiles";
+  var MAX_PERSISTED_TILES = 2e3;
+  var IdbTileStore = class {
+    dbPromise = null;
+    broken = false;
+    open() {
+      if (!this.dbPromise) {
+        this.dbPromise = new Promise((resolve, reject) => {
+          const request = indexedDB.open(DB_NAME, 1);
+          request.onupgradeneeded = () => {
+            if (!request.result.objectStoreNames.contains(STORE_NAME)) {
+              request.result.createObjectStore(STORE_NAME, { keyPath: "key" });
+            }
+          };
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error ?? new Error("IndexedDB open failed"));
+        });
+      }
+      return this.dbPromise;
+    }
+    async run(mode, operation) {
+      if (this.broken) return void 0;
+      try {
+        const db = await this.open();
+        return await new Promise((resolve, reject) => {
+          const request = operation(db.transaction(STORE_NAME, mode).objectStore(STORE_NAME));
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error ?? new Error("IndexedDB request failed"));
+        });
+      } catch (err) {
+        if (!this.broken) {
+          this.broken = true;
+          log.warn("IndexedDB unavailable; falling back to in-memory tile cache only", err);
+        }
+        return void 0;
+      }
+    }
+    async get(key) {
+      return this.run("readonly", (store) => store.get(key));
+    }
+    async set(tile) {
+      await this.run("readwrite", (store) => store.put(tile));
+    }
+    async clear() {
+      await this.run("readwrite", (store) => store.clear());
+    }
+    /** Drop expired tiles, then the oldest beyond the cap. */
+    async prune(ttlMs) {
+      const all = await this.run("readonly", (store) => store.getAll());
+      if (!all) return;
+      const now = Date.now();
+      const expired = all.filter((tile) => now - tile.fetchedAt > ttlMs).map((tile) => tile.key);
+      const alive = all.filter((tile) => now - tile.fetchedAt <= ttlMs).sort((a, b) => a.fetchedAt - b.fetchedAt);
+      const overflow = alive.slice(0, Math.max(0, alive.length - MAX_PERSISTED_TILES));
+      for (const key of [...expired, ...overflow.map((tile) => tile.key)]) {
+        await this.run("readwrite", (store) => store.delete(key));
+      }
+    }
   };
 
   // src/geoadmin/client.ts
@@ -209,9 +271,10 @@
       this.slots.set(key, slot);
       return slot.entries;
     }
-    set(key, entries) {
+    /** fetchedAt lets persisted tiles keep their original age (TTL coherence). */
+    set(key, entries, fetchedAt = this.now()) {
       this.slots.delete(key);
-      this.slots.set(key, { entries, fetchedAt: this.now() });
+      this.slots.set(key, { entries, fetchedAt });
       while (this.slots.size > this.maxTiles) {
         const oldest = this.slots.keys().next().value;
         if (oldest === void 0) break;
@@ -223,14 +286,18 @@
     }
   };
   var TileFetcher = class {
-    constructor(cache = new TileCache(), fetchTile = fetchOfficialStreets) {
+    constructor(cache = new TileCache(), fetchTile = fetchOfficialStreets, persistent = null) {
       this.cache = cache;
       this.fetchTile = fetchTile;
+      this.persistent = persistent;
+      void this.persistent?.prune(CACHE_TTL_MS);
     }
     cache;
     fetchTile;
+    persistent;
     /**
-     * Resolve all official streets covering the bbox, tile by tile (cache first),
+     * Resolve all official streets covering the bbox, tile by tile
+     * (memory cache, then persistent store, then network),
      * deduplicated by federal street id.
      */
     async fetchBbox(bbox, signal, onProgress) {
@@ -239,9 +306,7 @@
       onProgress?.(0, keys.length);
       const perTile = await Promise.all(
         keys.map(async (key) => {
-          const cached = this.cache.get(key);
-          const entries = cached ?? await this.fetchTile(tileKeyToBbox(key), signal);
-          if (!cached) this.cache.set(key, entries);
+          const entries = await this.resolveTile(key, signal);
           done++;
           onProgress?.(done, keys.length);
           return entries;
@@ -252,6 +317,24 @@
         for (const e of entries) byEsid.set(e.esid, e);
       }
       return [...byEsid.values()];
+    }
+    async resolveTile(key, signal) {
+      const cached = this.cache.get(key);
+      if (cached) return cached;
+      const persisted = await this.persistent?.get(key);
+      if (persisted && Date.now() - persisted.fetchedAt <= CACHE_TTL_MS) {
+        this.cache.set(key, persisted.entries, persisted.fetchedAt);
+        return persisted.entries;
+      }
+      const entries = await this.fetchTile(tileKeyToBbox(key), signal);
+      this.cache.set(key, entries);
+      void this.persistent?.set({ key, entries, fetchedAt: Date.now() });
+      return entries;
+    }
+    /** Used by Rescan: drop both cache levels. */
+    clearAll() {
+      this.cache.clear();
+      void this.persistent?.clear();
     }
   };
 
@@ -323,6 +406,8 @@
     minZoomLabel: "Min zoom to scan:",
     languageLabel: "Language:",
     languageAuto: "Auto (WME)",
+    shortcutNextIssue: "CH Names: select the next issue",
+    shortcutFixSelected: "CH Names: fix the selected segment",
     errNotFixable: "Not fixable",
     errEditingNotAllowed: "Editing is not allowed here",
     errSegmentUnloaded: "Segment no longer loaded",
@@ -396,6 +481,8 @@
     minZoomLabel: "Zoom minimal pour scanner:",
     languageLabel: "Langue:",
     languageAuto: "Auto (WME)",
+    shortcutNextIssue: "CH Names: sélectionner l'écart suivant",
+    shortcutFixSelected: "CH Names: corriger le segment sélectionné",
     errNotFixable: "Non corrigeable",
     errEditingNotAllowed: "Édition non autorisée ici",
     errSegmentUnloaded: "Segment plus chargé",
@@ -469,6 +556,8 @@
     minZoomLabel: "Minimaler Zoom zum Scannen:",
     languageLabel: "Sprache:",
     languageAuto: "Auto (WME)",
+    shortcutNextIssue: "CH Names: nächste Abweichung auswählen",
+    shortcutFixSelected: "CH Names: ausgewähltes Segment korrigieren",
     errNotFixable: "Nicht korrigierbar",
     errEditingNotAllowed: "Bearbeiten ist hier nicht erlaubt",
     errSegmentUnloaded: "Segment nicht mehr geladen",
@@ -542,6 +631,8 @@
     minZoomLabel: "Zoom minimo per la scansione:",
     languageLabel: "Lingua:",
     languageAuto: "Auto (WME)",
+    shortcutNextIssue: "CH Names: seleziona la prossima differenza",
+    shortcutFixSelected: "CH Names: correggi il segmento selezionato",
     errNotFixable: "Non correggibile",
     errEditingNotAllowed: "La modifica non è consentita qui",
     errSegmentUnloaded: "Segmento non più caricato",
@@ -1444,7 +1535,7 @@
     }
     /** Full rescan ignoring the tile cache (e.g. after register daily update). */
     rescan() {
-      this.fetcher.cache.clear();
+      this.fetcher.clearAll();
       this.lastIndex = null;
       this.lastSpatialIndex = null;
       this.coveredTiles = null;
@@ -1576,6 +1667,34 @@
       }
     }
   };
+
+  // src/shortcuts.ts
+  function registerShortcuts(sdk2, scanner, settings, actions) {
+    const create = (shortcutId, description, keys, callback) => {
+      try {
+        sdk2.Shortcuts.createShortcut({ shortcutId, description, shortcutKeys: keys, callback });
+      } catch (err) {
+        log.warn(`Shortcut keys "${keys}" unavailable for ${shortcutId}; registering unbound`, err);
+        try {
+          sdk2.Shortcuts.createShortcut({ shortcutId, description, shortcutKeys: null, callback });
+        } catch {
+        }
+      }
+    };
+    create("chk-next-issue", t("shortcutNextIssue"), "A+n", () => {
+      if (settings.get().enabled) actions.nextIssue();
+    });
+    create("chk-fix-selected", t("shortcutFixSelected"), "A+f", () => {
+      if (!settings.get().enabled) return;
+      const selection = sdk2.Editing.getSelection();
+      if (selection?.objectType !== "segment" || selection.ids.length !== 1) return;
+      const issue = scanner.getSnapshot().issues.get(selection.ids[0]);
+      if (!issue?.fixable) return;
+      void withFixLock(async () => fixSegment(sdk2, issue, settings.get())).then((result) => {
+        if (result !== null) scanner.reevaluate();
+      });
+    });
+  }
 
   // src/sdk.ts
   var SCRIPT_ID = "wme-ch-street-name-checker";
@@ -1875,7 +1994,7 @@ ${statusChipRules}
     }
     buildFooter() {
       const footer = el("div", "chk-footer");
-      footer.appendChild(el("span", "chk-muted", `v${"1.0.0"} · `));
+      footer.appendChild(el("span", "chk-muted", `v${"1.1.0"} · `));
       const link = el("a", "", "Changelog");
       link.href = "https://github.com/Neprena/wme-ch-street-name-checker/blob/main/CHANGELOG.md";
       link.target = "_blank";
@@ -2411,7 +2530,7 @@ ${statusChipRules}
     await sdk2.Events.once({ eventName: "wme-ready" });
     const settings = new SettingsStore();
     setLocale(resolveLocale(settings.get().language, sdk2.Settings.getLocale().localeCode));
-    const fetcher = new TileFetcher();
+    const fetcher = new TileFetcher(void 0, void 0, new IdbTileStore());
     const scanner = new Scanner(sdk2, fetcher, settings);
     const layer = new HighlightLayer(sdk2, settings);
     layer.init();
@@ -2425,8 +2544,9 @@ ${statusChipRules}
     const tab = new TabUI(sdk2, scanner, settings);
     await tab.init();
     new EditPanelBox(sdk2, scanner, settings).init();
+    registerShortcuts(sdk2, scanner, settings, { nextIssue: () => tab.selectNextIssue() });
     scanner.start();
-    log.info(`v${"1.0.0"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
+    log.info(`v${"1.1.0"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
   }
   main().catch((err) => log.error("Initialization failed", err));
 })();

@@ -123,7 +123,7 @@ export class Scanner {
 
   /** Full rescan ignoring the tile cache (e.g. after register daily update). */
   rescan(): void {
-    this.fetcher.cache.clear();
+    this.fetcher.clearAll();
     this.lastIndex = null;
     this.lastSpatialIndex = null;
     this.coveredTiles = null;

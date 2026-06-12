@@ -3,6 +3,12 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [1.1.0] - 2026-06-12
+
+### Added
+- Keyboard shortcuts, remappable in the native WME keyboard settings: Alt+N selects the next issue, Alt+F fixes the selected segment. On key collision with another script they register unbound.
+- Persistent tile cache (IndexedDB): areas scanned in the last 24 h survive a WME reload with zero network requests. Degrades silently to memory-only when IndexedDB is unavailable; Rescan clears both levels.
+
 ## [1.0.0] - 2026-06-12
 
 ### Added

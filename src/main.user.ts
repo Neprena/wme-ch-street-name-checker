@@ -1,8 +1,10 @@
+import { IdbTileStore } from "./geoadmin/idb-store";
 import { TileFetcher } from "./geoadmin/tiles";
 import { resolveLocale, setLocale } from "./i18n";
 import { log } from "./log";
 import { HighlightLayer, registerLayerCheckbox } from "./map-layer";
 import { Scanner } from "./scan";
+import { registerShortcuts } from "./shortcuts";
 import { initSdk } from "./sdk";
 import { SettingsStore } from "./settings";
 import { EditPanelBox } from "./ui/edit-panel";
@@ -14,7 +16,7 @@ async function main(): Promise<void> {
 
   const settings = new SettingsStore();
   setLocale(resolveLocale(settings.get().language, sdk.Settings.getLocale().localeCode));
-  const fetcher = new TileFetcher();
+  const fetcher = new TileFetcher(undefined, undefined, new IdbTileStore());
   const scanner = new Scanner(sdk, fetcher, settings);
   const layer = new HighlightLayer(sdk, settings);
 
@@ -32,6 +34,7 @@ async function main(): Promise<void> {
   await tab.init();
 
   new EditPanelBox(sdk, scanner, settings).init();
+  registerShortcuts(sdk, scanner, settings, { nextIssue: () => tab.selectNextIssue() });
 
   scanner.start();
   log.info(`v${__SCRIPT_VERSION__} ready (SDK ${sdk.getSDKVersion()}, WME ${sdk.getWMEVersion()})`);

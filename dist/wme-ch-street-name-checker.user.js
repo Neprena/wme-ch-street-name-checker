@@ -1906,7 +1906,7 @@
       return { ...DEFAULT_SETTINGS, ...parsed, version: 2, enabledStatuses };
     }
     if (parsed.version !== 2) return { ...DEFAULT_SETTINGS };
-    return { ...DEFAULT_SETTINGS, ...parsed };
+    return { ...DEFAULT_SETTINGS, ...parsed, version: 2 };
   }
   function loadSettings() {
     try {

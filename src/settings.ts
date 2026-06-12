@@ -98,7 +98,7 @@ export function migrateSettings(parsed: Omit<Partial<Settings>, "version"> & { v
     return { ...DEFAULT_SETTINGS, ...parsed, version: 2, enabledStatuses };
   }
   if (parsed.version !== 2) return { ...DEFAULT_SETTINGS };
-  return { ...DEFAULT_SETTINGS, ...parsed };
+  return { ...DEFAULT_SETTINGS, ...parsed, version: 2 };
 }
 
 export function loadSettings(): Settings {

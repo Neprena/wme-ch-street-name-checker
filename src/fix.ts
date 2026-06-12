@@ -56,6 +56,8 @@ export function fixSegment(sdk: WmeSDK, issue: Issue, settings: Settings): FixOu
       }
     }
     if (!street) return fail("errStreetCreate");
+    // Already correct (stale list, repeated group fix): no empty edit.
+    if (segment.primaryStreetId === street.id) return { segmentId, ok: true };
 
     // Alternates must be passed back explicitly so they are preserved.
     const alternateStreetIds = [...segment.alternateStreetIds];

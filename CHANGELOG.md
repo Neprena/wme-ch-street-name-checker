@@ -3,6 +3,11 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [1.2.1] - 2026-06-12
+
+### Fixed
+- Fixing a segment whose street was already correct (stale list, repeated group fix) created an empty edit in the WME stack; it is now a no-op.
+
 ## [1.2.0] - 2026-06-12
 
 ### Added

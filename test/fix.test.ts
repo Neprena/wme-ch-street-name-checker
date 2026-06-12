@@ -67,6 +67,15 @@ describe("fixSegment", () => {
     expect(updates).toEqual([i.segmentId]);
   });
 
+  it("does nothing when the street is already assigned (no empty edit)", () => {
+    const { sdk, updates } = makeSdk();
+    // makeSdk assigns primaryStreetId 100; force getStreet to return that same street
+    (sdk.DataModel.Streets as { getStreet: unknown }).getStreet = () => ({ id: 100 });
+    const outcome = fixSegment(sdk, issue(), DEFAULT_SETTINGS);
+    expect(outcome.ok).toBe(true);
+    expect(updates).toHaveLength(0);
+  });
+
   it("refuses non-fixable issues", () => {
     const { sdk } = makeSdk();
     const outcome = fixSegment(sdk, issue({ fixable: false, suggestion: null }), DEFAULT_SETTINGS);

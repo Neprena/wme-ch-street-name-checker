@@ -3,6 +3,11 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [0.9.0] - 2026-06-12
+
+### Fixed
+- Fix buttons gave no feedback and allowed double-clicks: they are now disabled while applying, group fixes show live progress ("3/25…"), and a shared lock ignores any other fix click until the current one finishes. Intermediate re-evaluations during a batch are skipped, making large group fixes noticeably faster.
+
 ## [0.8.0] - 2026-06-12
 
 ### Added

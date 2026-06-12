@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WME CH Street Name Checker
 // @namespace    https://github.com/Neprena
-// @version      0.8.0
+// @version      0.9.0
 // @description  Validates Waze street names against the official Swiss street register (répertoire officiel des rues, swisstopo / geo.admin.ch)
 // @author       Yann Rapenne
 // @license      MIT
@@ -623,6 +623,79 @@
     });
   }
 
+  // src/fix.ts
+  var GROUP_FIX_CAP = 25;
+  var GROUP_FIX_CONFIRM_THRESHOLD = 5;
+  function formatFixError(outcome) {
+    if (outcome.errorCode) return t(outcome.errorCode);
+    return outcome.errorDetail ?? "?";
+  }
+  function fixSegment(sdk2, issue, settings) {
+    const segmentId = issue.segmentId;
+    const fail = (errorCode) => ({ segmentId, ok: false, errorCode });
+    if (!issue.fixable || !issue.suggestion) return fail("errNotFixable");
+    if (!sdk2.Editing.isEditingAllowed()) return fail("errEditingNotAllowed");
+    try {
+      const segment = sdk2.DataModel.Segments.getById({ segmentId });
+      if (!segment) return fail("errSegmentUnloaded");
+      const address = sdk2.DataModel.Segments.getAddress({ segmentId });
+      const cityId = address.city?.id;
+      if (cityId == null) return fail("errNoCity");
+      let street = sdk2.DataModel.Streets.getStreet({ streetName: issue.suggestion, cityId });
+      if (!street) {
+        try {
+          street = sdk2.DataModel.Streets.addStreet({ streetName: issue.suggestion, cityId });
+        } catch {
+          street = sdk2.DataModel.Streets.getStreet({ streetName: issue.suggestion, cityId });
+        }
+      }
+      if (!street) return fail("errStreetCreate");
+      const alternateStreetIds = [...segment.alternateStreetIds];
+      if (settings.keepOldNameAsAlt && issue.status !== "NEAR" && // never keep a typo as alternate
+      segment.primaryStreetId != null && segment.primaryStreetId !== street.id && !alternateStreetIds.includes(segment.primaryStreetId)) {
+        alternateStreetIds.push(segment.primaryStreetId);
+      }
+      sdk2.DataModel.Segments.updateAddress({
+        segmentId,
+        primaryStreetId: street.id,
+        alternateStreetIds
+      });
+      return { segmentId, ok: true };
+    } catch (err) {
+      log.error(`Fix failed for segment ${segmentId}`, err);
+      return {
+        segmentId,
+        ok: false,
+        errorDetail: err instanceof Error ? err.message : String(err)
+      };
+    }
+  }
+  async function fixGroup(sdk2, issues, settings, onProgress) {
+    const outcomes = [];
+    const batch = issues.slice(0, GROUP_FIX_CAP);
+    for (const issue of batch) {
+      const outcome = fixSegment(sdk2, issue, settings);
+      outcomes.push(outcome);
+      onProgress?.(outcomes.length, batch.length);
+      if (!outcome.ok) break;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    return outcomes;
+  }
+  var fixInFlight = false;
+  function isFixInFlight() {
+    return fixInFlight;
+  }
+  async function withFixLock(fn) {
+    if (fixInFlight) return null;
+    fixInFlight = true;
+    try {
+      return await fn();
+    } finally {
+      fixInFlight = false;
+    }
+  }
+
   // src/guidelines.ts
   var MIN_SEGMENT_LENGTH_M = 5;
   var MIN_NARROW_STREET_LENGTH_M = 50;
@@ -1169,6 +1242,7 @@
     }
     /** Re-run evaluation against the last fetched official index, without refetching. */
     reevaluate() {
+      if (isFixInFlight()) return;
       if (this.paused || !this.settings.get().enabled || !this.lastIndex) return;
       this.evaluateAll(this.lastIndex);
       this.publish({ state: "done" });
@@ -1372,63 +1446,6 @@
       return this.settings;
     }
   };
-
-  // src/fix.ts
-  var GROUP_FIX_CAP = 25;
-  var GROUP_FIX_CONFIRM_THRESHOLD = 5;
-  function formatFixError(outcome) {
-    if (outcome.errorCode) return t(outcome.errorCode);
-    return outcome.errorDetail ?? "?";
-  }
-  function fixSegment(sdk2, issue, settings) {
-    const segmentId = issue.segmentId;
-    const fail = (errorCode) => ({ segmentId, ok: false, errorCode });
-    if (!issue.fixable || !issue.suggestion) return fail("errNotFixable");
-    if (!sdk2.Editing.isEditingAllowed()) return fail("errEditingNotAllowed");
-    try {
-      const segment = sdk2.DataModel.Segments.getById({ segmentId });
-      if (!segment) return fail("errSegmentUnloaded");
-      const address = sdk2.DataModel.Segments.getAddress({ segmentId });
-      const cityId = address.city?.id;
-      if (cityId == null) return fail("errNoCity");
-      let street = sdk2.DataModel.Streets.getStreet({ streetName: issue.suggestion, cityId });
-      if (!street) {
-        try {
-          street = sdk2.DataModel.Streets.addStreet({ streetName: issue.suggestion, cityId });
-        } catch {
-          street = sdk2.DataModel.Streets.getStreet({ streetName: issue.suggestion, cityId });
-        }
-      }
-      if (!street) return fail("errStreetCreate");
-      const alternateStreetIds = [...segment.alternateStreetIds];
-      if (settings.keepOldNameAsAlt && issue.status !== "NEAR" && // never keep a typo as alternate
-      segment.primaryStreetId != null && segment.primaryStreetId !== street.id && !alternateStreetIds.includes(segment.primaryStreetId)) {
-        alternateStreetIds.push(segment.primaryStreetId);
-      }
-      sdk2.DataModel.Segments.updateAddress({
-        segmentId,
-        primaryStreetId: street.id,
-        alternateStreetIds
-      });
-      return { segmentId, ok: true };
-    } catch (err) {
-      log.error(`Fix failed for segment ${segmentId}`, err);
-      return {
-        segmentId,
-        ok: false,
-        errorDetail: err instanceof Error ? err.message : String(err)
-      };
-    }
-  }
-  function fixGroup(sdk2, issues, settings) {
-    const outcomes = [];
-    for (const issue of issues.slice(0, GROUP_FIX_CAP)) {
-      const outcome = fixSegment(sdk2, issue, settings);
-      outcomes.push(outcome);
-      if (!outcome.ok) break;
-    }
-    return outcomes;
-  }
 
   // src/ui/styles.ts
   var statusChipRules = Object.keys(STATUS_STYLES).map(
@@ -1638,7 +1655,7 @@ ${statusChipRules}
     }
     buildFooter() {
       const footer = el("div", "chk-footer");
-      footer.appendChild(el("span", "chk-muted", `v${"0.8.0"} · `));
+      footer.appendChild(el("span", "chk-muted", `v${"0.9.0"} · `));
       const link = el("a", "", "Changelog");
       link.href = "https://github.com/Neprena/wme-ch-street-name-checker/blob/main/CHANGELOG.md";
       link.target = "_blank";
@@ -1748,7 +1765,7 @@ ${statusChipRules}
         );
         fixAllBtn.addEventListener("click", (ev) => {
           ev.stopPropagation();
-          this.onFixGroup(group);
+          this.onFixGroup(group, fixAllBtn);
         });
         header.appendChild(fixAllBtn);
       }
@@ -1789,7 +1806,7 @@ ${statusChipRules}
         fixBtn.title = t("fixTitle", { name: issue.suggestion ?? "" });
         fixBtn.addEventListener("click", (ev) => {
           ev.stopPropagation();
-          this.onFixOne(issue);
+          this.onFixOne(issue, fixBtn);
         });
         row.appendChild(fixBtn);
       }
@@ -1832,32 +1849,46 @@ ${statusChipRules}
       });
       first?.scrollIntoView({ block: "nearest" });
     }
-    onFixOne(issue) {
-      const outcome = fixSegment(this.sdk, issue, this.settings.get());
-      if (!outcome.ok) {
-        alert(t("fixFailed", { error: formatFixError(outcome) }));
-        return;
-      }
-      this.scanner.reevaluate();
+    onFixOne(issue, button) {
+      void withFixLock(async () => {
+        if (button) {
+          button.disabled = true;
+          button.textContent = "…";
+        }
+        const outcome = fixSegment(this.sdk, issue, this.settings.get());
+        if (!outcome.ok) {
+          alert(t("fixFailed", { error: formatFixError(outcome) }));
+        }
+        return outcome;
+      }).then((result) => {
+        if (result !== null) this.scanner.reevaluate();
+      });
     }
-    onFixGroup(group) {
+    onFixGroup(group, button) {
       const n = Math.min(group.issues.length, GROUP_FIX_CAP);
       if (n > GROUP_FIX_CONFIRM_THRESHOLD && !confirm(t("confirmGroupFix", { name: group.suggestion ?? "", n }))) {
         return;
       }
-      const outcomes = fixGroup(this.sdk, group.issues, this.settings.get());
-      const failed = outcomes.find((o) => !o.ok);
-      if (failed) {
-        alert(
-          t("fixStopped", {
-            done: outcomes.filter((o) => o.ok).length,
-            total: n,
-            error: formatFixError(failed),
-            id: failed.segmentId
-          })
-        );
-      }
-      this.scanner.reevaluate();
+      void withFixLock(async () => {
+        if (button) button.disabled = true;
+        const outcomes = await fixGroup(this.sdk, group.issues, this.settings.get(), (done, total) => {
+          if (button) button.textContent = `${done}/${total}…`;
+        });
+        const failed = outcomes.find((o) => !o.ok);
+        if (failed) {
+          alert(
+            t("fixStopped", {
+              done: outcomes.filter((o) => o.ok).length,
+              total: n,
+              error: formatFixError(failed),
+              id: failed.segmentId
+            })
+          );
+        }
+        return outcomes;
+      }).then((result) => {
+        if (result !== null) this.scanner.reevaluate();
+      });
     }
     buildSettings() {
       const details = el("details", "chk-settings");
@@ -1995,6 +2026,7 @@ ${statusChipRules}
       return null;
     }
     schedule() {
+      if (isFixInFlight()) return;
       for (const timer of this.retryTimers) clearTimeout(timer);
       this.retryTimers = [];
       const segmentId = this.selectedSegmentId();
@@ -2079,13 +2111,13 @@ ${statusChipRules}
         const fixBtn = document.createElement("button");
         fixBtn.textContent = t("fix");
         fixBtn.title = t("fixTitle", { name: issue.suggestion ?? "" });
-        fixBtn.addEventListener("click", () => this.onFixOne(issue));
+        fixBtn.addEventListener("click", () => this.onFixOne(issue, fixBtn));
         buttons.appendChild(fixBtn);
         const group = issuesInSameGroup(snapshot.issues, issue);
         if (group.length > 1) {
           const fixAllBtn = document.createElement("button");
           fixAllBtn.textContent = t("fixAll", { n: Math.min(group.length, GROUP_FIX_CAP) });
-          fixAllBtn.addEventListener("click", () => this.onFixGroup(issue, group));
+          fixAllBtn.addEventListener("click", () => this.onFixGroup(issue, group, fixAllBtn));
           buttons.appendChild(fixAllBtn);
         }
         container.appendChild(buttons);
@@ -2103,34 +2135,52 @@ ${statusChipRules}
         return false;
       }
     }
-    onFixOne(issue) {
-      const outcome = fixSegment(this.sdk, issue, this.settings.get());
-      if (!outcome.ok) {
-        alert(t("fixFailed", { error: formatFixError(outcome) }));
-        return;
-      }
-      this.scanner.reevaluate();
-      this.schedule();
+    onFixOne(issue, button) {
+      void withFixLock(async () => {
+        if (button) {
+          button.disabled = true;
+          button.textContent = "…";
+        }
+        const outcome = fixSegment(this.sdk, issue, this.settings.get());
+        if (!outcome.ok) {
+          alert(t("fixFailed", { error: formatFixError(outcome) }));
+        }
+        return outcome;
+      }).then((result) => {
+        if (result !== null) {
+          this.scanner.reevaluate();
+          this.schedule();
+        }
+      });
     }
-    onFixGroup(issue, group) {
+    onFixGroup(issue, group, button) {
       const n = Math.min(group.length, GROUP_FIX_CAP);
       if (n > GROUP_FIX_CONFIRM_THRESHOLD && !confirm(t("confirmGroupFix", { name: issue.suggestion ?? "", n }))) {
         return;
       }
-      const outcomes = fixGroup(this.sdk, group, this.settings.get());
-      const failed = outcomes.find((o) => !o.ok);
-      if (failed) {
-        alert(
-          t("fixStopped", {
-            done: outcomes.filter((o) => o.ok).length,
-            total: n,
-            error: formatFixError(failed),
-            id: failed.segmentId
-          })
-        );
-      }
-      this.scanner.reevaluate();
-      this.schedule();
+      void withFixLock(async () => {
+        if (button) button.disabled = true;
+        const outcomes = await fixGroup(this.sdk, group, this.settings.get(), (done, total) => {
+          if (button) button.textContent = `${done}/${total}…`;
+        });
+        const failed = outcomes.find((o) => !o.ok);
+        if (failed) {
+          alert(
+            t("fixStopped", {
+              done: outcomes.filter((o) => o.ok).length,
+              total: n,
+              error: formatFixError(failed),
+              id: failed.segmentId
+            })
+          );
+        }
+        return outcomes;
+      }).then((result) => {
+        if (result !== null) {
+          this.scanner.reevaluate();
+          this.schedule();
+        }
+      });
     }
   };
 
@@ -2155,7 +2205,7 @@ ${statusChipRules}
     await tab.init();
     new EditPanelBox(sdk2, scanner, settings).init();
     scanner.start();
-    log.info(`v${"0.8.0"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
+    log.info(`v${"0.9.0"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
   }
   main().catch((err) => log.error("Initialization failed", err));
 })();

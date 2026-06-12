@@ -1,6 +1,7 @@
 import type { Segment, WmeSDK } from "wme-sdk-typings";
 import { tileKeyForPoint, tileKeysForBbox, type TileFetcher } from "./geoadmin/tiles";
 import type { Bbox } from "./geoadmin/types";
+import { isFixInFlight } from "./fix";
 import { evaluateGuidelines } from "./guidelines";
 import { log } from "./log";
 import { evaluateSegment, type Issue } from "./matching/evaluate";
@@ -135,6 +136,9 @@ export class Scanner {
 
   /** Re-run evaluation against the last fetched official index, without refetching. */
   reevaluate(): void {
+    // wme-after-edit fires for every segment of a batch fix; skip those
+    // intermediate re-evaluations (the fix flow runs one at the end).
+    if (isFixInFlight()) return;
     if (this.paused || !this.settings.get().enabled || !this.lastIndex) return;
     this.evaluateAll(this.lastIndex);
     this.publish({ state: "done" });

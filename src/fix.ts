@@ -85,13 +85,45 @@ export function fixSegment(sdk: WmeSDK, issue: Issue, settings: Settings): FixOu
   }
 }
 
-/** Sequential group fix; stops at the first error. Hard-capped. */
-export function fixGroup(sdk: WmeSDK, issues: Issue[], settings: Settings): FixOutcome[] {
+/**
+ * Sequential group fix; stops at the first error. Hard-capped.
+ * Yields to the event loop between segments so the UI can repaint progress.
+ */
+export async function fixGroup(
+  sdk: WmeSDK,
+  issues: Issue[],
+  settings: Settings,
+  onProgress?: (done: number, total: number) => void,
+): Promise<FixOutcome[]> {
   const outcomes: FixOutcome[] = [];
-  for (const issue of issues.slice(0, GROUP_FIX_CAP)) {
+  const batch = issues.slice(0, GROUP_FIX_CAP);
+  for (const issue of batch) {
     const outcome = fixSegment(sdk, issue, settings);
     outcomes.push(outcome);
+    onProgress?.(outcomes.length, batch.length);
     if (!outcome.ok) break;
+    await new Promise((resolve) => setTimeout(resolve, 0));
   }
   return outcomes;
+}
+
+let fixInFlight = false;
+
+export function isFixInFlight(): boolean {
+  return fixInFlight;
+}
+
+/**
+ * Re-entrance guard shared by every fix button (sidebar tab, edit-panel box,
+ * shortcuts): while one application runs, further fix clicks are ignored.
+ * Returns null when the lock is already held.
+ */
+export async function withFixLock<T>(fn: () => Promise<T>): Promise<T | null> {
+  if (fixInFlight) return null;
+  fixInFlight = true;
+  try {
+    return await fn();
+  } finally {
+    fixInFlight = false;
+  }
 }

@@ -1,5 +1,13 @@
 import type { WmeSDK } from "wme-sdk-typings";
-import { fixGroup, fixSegment, formatFixError, GROUP_FIX_CAP, GROUP_FIX_CONFIRM_THRESHOLD } from "../fix";
+import {
+  fixGroup,
+  fixSegment,
+  formatFixError,
+  GROUP_FIX_CAP,
+  GROUP_FIX_CONFIRM_THRESHOLD,
+  isFixInFlight,
+  withFixLock,
+} from "../fix";
 import { t } from "../i18n";
 import { log } from "../log";
 import { STATUS_STYLES } from "../map-layer";
@@ -54,6 +62,9 @@ export class EditPanelBox {
   }
 
   private schedule(): void {
+    // wme-after-edit fires per fixed segment; don't rebuild the box (and its
+    // progress button) while a fix batch is running.
+    if (isFixInFlight()) return;
     for (const timer of this.retryTimers) clearTimeout(timer);
     this.retryTimers = [];
     const segmentId = this.selectedSegmentId();
@@ -146,14 +157,14 @@ export class EditPanelBox {
       const fixBtn = document.createElement("button");
       fixBtn.textContent = t("fix");
       fixBtn.title = t("fixTitle", { name: issue.suggestion ?? "" });
-      fixBtn.addEventListener("click", () => this.onFixOne(issue));
+      fixBtn.addEventListener("click", () => this.onFixOne(issue, fixBtn));
       buttons.appendChild(fixBtn);
 
       const group = issuesInSameGroup(snapshot.issues, issue);
       if (group.length > 1) {
         const fixAllBtn = document.createElement("button");
         fixAllBtn.textContent = t("fixAll", { n: Math.min(group.length, GROUP_FIX_CAP) });
-        fixAllBtn.addEventListener("click", () => this.onFixGroup(issue, group));
+        fixAllBtn.addEventListener("click", () => this.onFixGroup(issue, group, fixAllBtn));
         buttons.appendChild(fixAllBtn);
       }
       container.appendChild(buttons);
@@ -173,17 +184,26 @@ export class EditPanelBox {
     }
   }
 
-  private onFixOne(issue: Issue): void {
-    const outcome = fixSegment(this.sdk, issue, this.settings.get());
-    if (!outcome.ok) {
-      alert(t("fixFailed", { error: formatFixError(outcome) }));
-      return;
-    }
-    this.scanner.reevaluate();
-    this.schedule();
+  private onFixOne(issue: Issue, button?: HTMLButtonElement): void {
+    void withFixLock(async () => {
+      if (button) {
+        button.disabled = true;
+        button.textContent = "…";
+      }
+      const outcome = fixSegment(this.sdk, issue, this.settings.get());
+      if (!outcome.ok) {
+        alert(t("fixFailed", { error: formatFixError(outcome) }));
+      }
+      return outcome;
+    }).then((result) => {
+      if (result !== null) {
+        this.scanner.reevaluate();
+        this.schedule();
+      }
+    });
   }
 
-  private onFixGroup(issue: Issue, group: Issue[]): void {
+  private onFixGroup(issue: Issue, group: Issue[], button?: HTMLButtonElement): void {
     const n = Math.min(group.length, GROUP_FIX_CAP);
     if (
       n > GROUP_FIX_CONFIRM_THRESHOLD &&
@@ -191,19 +211,28 @@ export class EditPanelBox {
     ) {
       return;
     }
-    const outcomes = fixGroup(this.sdk, group, this.settings.get());
-    const failed = outcomes.find((o) => !o.ok);
-    if (failed) {
-      alert(
-        t("fixStopped", {
-          done: outcomes.filter((o) => o.ok).length,
-          total: n,
-          error: formatFixError(failed),
-          id: failed.segmentId,
-        }),
-      );
-    }
-    this.scanner.reevaluate();
-    this.schedule();
+    void withFixLock(async () => {
+      if (button) button.disabled = true;
+      const outcomes = await fixGroup(this.sdk, group, this.settings.get(), (done, total) => {
+        if (button) button.textContent = `${done}/${total}…`;
+      });
+      const failed = outcomes.find((o) => !o.ok);
+      if (failed) {
+        alert(
+          t("fixStopped", {
+            done: outcomes.filter((o) => o.ok).length,
+            total: n,
+            error: formatFixError(failed),
+            id: failed.segmentId,
+          }),
+        );
+      }
+      return outcomes;
+    }).then((result) => {
+      if (result !== null) {
+        this.scanner.reevaluate();
+        this.schedule();
+      }
+    });
   }
 }

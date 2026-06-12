@@ -1,5 +1,12 @@
 import type { WmeSDK } from "wme-sdk-typings";
-import { fixGroup, fixSegment, formatFixError, GROUP_FIX_CAP, GROUP_FIX_CONFIRM_THRESHOLD } from "../fix";
+import {
+  fixGroup,
+  fixSegment,
+  formatFixError,
+  GROUP_FIX_CAP,
+  GROUP_FIX_CONFIRM_THRESHOLD,
+  withFixLock,
+} from "../fix";
 import { LANGUAGE_CHOICES, resolveLocale, setLocale, t, type LanguagePreference, type StringKey } from "../i18n";
 import { STATUS_STYLES } from "../map-layer";
 import type { Issue, IssueNote, IssueStatus } from "../matching/evaluate";
@@ -312,7 +319,7 @@ export class TabUI {
       );
       fixAllBtn.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        this.onFixGroup(group);
+        this.onFixGroup(group, fixAllBtn);
       });
       header.appendChild(fixAllBtn);
     }
@@ -356,7 +363,7 @@ export class TabUI {
       fixBtn.title = t("fixTitle", { name: issue.suggestion ?? "" });
       fixBtn.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        this.onFixOne(issue);
+        this.onFixOne(issue, fixBtn);
       });
       row.appendChild(fixBtn);
     }
@@ -406,16 +413,24 @@ export class TabUI {
     (first as HTMLElement | null)?.scrollIntoView({ block: "nearest" });
   }
 
-  private onFixOne(issue: Issue): void {
-    const outcome = fixSegment(this.sdk, issue, this.settings.get());
-    if (!outcome.ok) {
-      alert(t("fixFailed", { error: formatFixError(outcome) }));
-      return;
-    }
-    this.scanner.reevaluate();
+  private onFixOne(issue: Issue, button?: HTMLButtonElement): void {
+    void withFixLock(async () => {
+      if (button) {
+        button.disabled = true;
+        button.textContent = "…";
+      }
+      const outcome = fixSegment(this.sdk, issue, this.settings.get());
+      if (!outcome.ok) {
+        alert(t("fixFailed", { error: formatFixError(outcome) }));
+      }
+      return outcome;
+    }).then((result) => {
+      // null = another fix was already running; its own completion will re-render
+      if (result !== null) this.scanner.reevaluate();
+    });
   }
 
-  private onFixGroup(group: IssueGroup): void {
+  private onFixGroup(group: IssueGroup, button?: HTMLButtonElement): void {
     const n = Math.min(group.issues.length, GROUP_FIX_CAP);
     if (
       n > GROUP_FIX_CONFIRM_THRESHOLD &&
@@ -423,19 +438,26 @@ export class TabUI {
     ) {
       return;
     }
-    const outcomes = fixGroup(this.sdk, group.issues, this.settings.get());
-    const failed = outcomes.find((o) => !o.ok);
-    if (failed) {
-      alert(
-        t("fixStopped", {
-          done: outcomes.filter((o) => o.ok).length,
-          total: n,
-          error: formatFixError(failed),
-          id: failed.segmentId,
-        }),
-      );
-    }
-    this.scanner.reevaluate();
+    void withFixLock(async () => {
+      if (button) button.disabled = true;
+      const outcomes = await fixGroup(this.sdk, group.issues, this.settings.get(), (done, total) => {
+        if (button) button.textContent = `${done}/${total}…`;
+      });
+      const failed = outcomes.find((o) => !o.ok);
+      if (failed) {
+        alert(
+          t("fixStopped", {
+            done: outcomes.filter((o) => o.ok).length,
+            total: n,
+            error: formatFixError(failed),
+            id: failed.segmentId,
+          }),
+        );
+      }
+      return outcomes;
+    }).then((result) => {
+      if (result !== null) this.scanner.reevaluate();
+    });
   }
 
   private buildSettings(): HTMLElement {

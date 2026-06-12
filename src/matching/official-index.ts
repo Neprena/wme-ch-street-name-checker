@@ -1,0 +1,159 @@
+import type { OfficialStreet } from "../geoadmin/types";
+import { damerauLevenshtein } from "./distance";
+import { foldAccents, k0, k1, k2 } from "./normalize";
+
+/** One indexed name: a full official label, or one side of a bilingual "A/B" label. */
+export interface IndexedEntry {
+  street: OfficialStreet;
+  /** The name to compare against and to apply on fix. */
+  namePart: string;
+  /** True when namePart is one side of a slash-separated bilingual label. */
+  isSlashPart: boolean;
+  /** K1-normalized locality from zip_label ("1003 Lausanne" -> "lausanne"). */
+  locality: string;
+}
+
+export type MatchLevel = "exact" | "cosmetic" | "variant" | "near";
+
+export interface MatchResult {
+  level: MatchLevel;
+  /** Best candidate after ranking. */
+  entry: IndexedEntry;
+  candidates: IndexedEntry[];
+  /** Damerau-Levenshtein distance, only for level "near". */
+  distance?: number;
+  /** False when a locality was given and no candidate belongs to it. */
+  inLocality: boolean;
+}
+
+export function localityFromZipLabel(zipLabel: string): string {
+  return k1(zipLabel.replace(/^\d{4}\s*/, ""));
+}
+
+function isExistingStatus(status: string): boolean {
+  const s = status.toLowerCase();
+  return s === "bestehend" || s === "real" || s === "existing";
+}
+
+function rankScore(entry: IndexedEntry, locality?: string): number {
+  let score = 0;
+  if (entry.street.official) score += 8;
+  if (isExistingStatus(entry.street.status)) score += 4;
+  const t = entry.street.type.toLowerCase();
+  if (t !== "benanntes gebiet" && t !== "area") score += 2;
+  if (locality && entry.locality === locality) score += 1;
+  return score;
+}
+
+function pushTo(map: Map<string, IndexedEntry[]>, key: string, entry: IndexedEntry): void {
+  const list = map.get(key);
+  if (list) list.push(entry);
+  else map.set(key, [entry]);
+}
+
+interface FuzzyCandidate {
+  entry: IndexedEntry;
+  key: string;
+}
+
+const FUZZY_LENGTH_SLACK = 2;
+
+/** Lookup structure over the official streets of one scanned area. */
+export class OfficialIndex {
+  private byK0 = new Map<string, IndexedEntry[]>();
+  private byK1 = new Map<string, IndexedEntry[]>();
+  private byK2 = new Map<string, IndexedEntry[]>();
+  /** Buckets by first character of the folded K2 key, for bounded fuzzy search. */
+  private fuzzyBuckets = new Map<string, FuzzyCandidate[]>();
+  readonly entryCount: number;
+  readonly streetCount: number;
+
+  constructor(streets: OfficialStreet[]) {
+    let entries = 0;
+    for (const street of streets) {
+      const locality = localityFromZipLabel(street.zipLabel);
+      const parts = street.label.includes("/")
+        ? [street.label, ...street.label.split("/").map((p) => p.trim()).filter(Boolean)]
+        : [street.label];
+      parts.forEach((namePart, i) => {
+        const entry: IndexedEntry = {
+          street,
+          namePart,
+          isSlashPart: i > 0,
+          locality,
+        };
+        entries++;
+        pushTo(this.byK0, k0(namePart), entry);
+        pushTo(this.byK1, k1(namePart), entry);
+        const k2Keys = k2(namePart);
+        for (const key of k2Keys) pushTo(this.byK2, key, entry);
+        const primary = k2Keys[0];
+        if (primary && primary.length > 0) {
+          const bucketKey = primary[0] as string;
+          const bucket = this.fuzzyBuckets.get(bucketKey);
+          const candidate = { entry, key: primary };
+          if (bucket) bucket.push(candidate);
+          else this.fuzzyBuckets.set(bucketKey, [candidate]);
+        }
+      });
+    }
+    this.entryCount = entries;
+    this.streetCount = streets.length;
+  }
+
+  /**
+   * Cascade lookup: K0 exact -> K1 cosmetic -> K2 variant -> bounded fuzzy.
+   * `locality` (K1-normalized) only affects ranking and the inLocality flag.
+   */
+  lookup(name: string, locality?: string): MatchResult | null {
+    const exact = this.byK0.get(k0(name));
+    if (exact) return this.result("exact", exact, locality);
+
+    const cosmetic = this.byK1.get(k1(name));
+    if (cosmetic) return this.result("cosmetic", cosmetic, locality);
+
+    for (const key of k2(name)) {
+      const variant = this.byK2.get(key);
+      if (variant) return this.result("variant", variant, locality);
+    }
+
+    return this.fuzzyLookup(name, locality);
+  }
+
+  private fuzzyLookup(name: string, locality?: string): MatchResult | null {
+    const queryKey = k2(name)[0];
+    if (!queryKey || queryKey.length < 3) return null;
+    const maxDist = queryKey.length < 8 ? 1 : 2;
+    const bucket = this.fuzzyBuckets.get(foldAccents(queryKey[0] as string)) ?? [];
+
+    let best = maxDist + 1;
+    const matchesByKey = new Map<string, IndexedEntry[]>();
+    for (const { entry, key } of bucket) {
+      if (Math.abs(key.length - queryKey.length) > FUZZY_LENGTH_SLACK) continue;
+      const d = damerauLevenshtein(queryKey, key, maxDist);
+      if (d > maxDist || d === 0) continue;
+      if (d < best) {
+        best = d;
+        matchesByKey.clear();
+      }
+      if (d === best) pushTo(matchesByKey, key, entry);
+    }
+    if (best > maxDist) return null;
+    // Ambiguous: two different official names at the same distance -> no suggestion.
+    if (matchesByKey.size !== 1) return null;
+    const candidates = [...matchesByKey.values()][0] as IndexedEntry[];
+    const result = this.result("near", candidates, locality);
+    result.distance = best;
+    return result;
+  }
+
+  private result(level: MatchLevel, candidates: IndexedEntry[], locality?: string): MatchResult {
+    const sorted = [...candidates].sort((a, b) => rankScore(b, locality) - rankScore(a, locality));
+    return {
+      level,
+      entry: sorted[0] as IndexedEntry,
+      candidates: sorted,
+      inLocality: locality ? sorted.some((c) => c.locality === locality) : true,
+    };
+  }
+}

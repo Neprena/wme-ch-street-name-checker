@@ -1,0 +1,108 @@
+import { describe, expect, it } from "vitest";
+import { foldAccents, k0, k1, k2 } from "../src/matching/normalize";
+
+describe("k0", () => {
+  it("trims and NFC-normalizes", () => {
+    expect(k0("  Rue du Grand-Pont ")).toBe("Rue du Grand-Pont");
+    // combining circumflex (e + U+0302) -> precomposed e-circumflex
+    expect(k0("Fore\u{0302}t")).toBe("For\u{00EA}t");
+  });
+});
+
+describe("k1 (cosmetic)", () => {
+  it("normalizes typographic apostrophes", () => {
+    expect(k1("Ch. de l’Eglise")).toBe(k1("Ch. de l'Eglise"));
+  });
+
+  it("normalizes long dashes", () => {
+    expect(k1("Petit–Chêne")).toBe(k1("Petit-Chêne"));
+    expect(k1("Petit—Chêne")).toBe(k1("Petit-Chêne"));
+  });
+
+  it("collapses whitespace", () => {
+    expect(k1("Rue  de   la Gare")).toBe(k1("Rue de la Gare"));
+  });
+
+  it("removes spaces around hyphens", () => {
+    expect(k1("Petit - Chêne")).toBe(k1("Petit-Chêne"));
+  });
+
+  it("is case-insensitive", () => {
+    expect(k1("rue de la gare")).toBe(k1("Rue de la Gare"));
+  });
+
+  it("maps ß to ss (Swiss orthography)", () => {
+    expect(k1("Straße")).toBe(k1("Strasse"));
+  });
+
+  it("KEEPS accents: a missing accent is a real error", () => {
+    expect(k1("Foret")).not.toBe(k1("Forêt"));
+  });
+
+  it("is idempotent", () => {
+    const samples = ["Ch. de l’Eglise", "Petit – Chêne", "STRASSE  ß"];
+    for (const s of samples) expect(k1(k1(s))).toBe(k1(s));
+  });
+});
+
+describe("foldAccents", () => {
+  it("strips diacritics", () => {
+    expect(foldAccents("forêt-éàüöç")).toBe("foret-eauoc");
+  });
+});
+
+describe("k2 (expanded)", () => {
+  const intersects = (a: string, b: string): boolean =>
+    k2(a).some((key) => k2(b).includes(key));
+
+  it("folds accents", () => {
+    expect(intersects("Foret", "Forêt")).toBe(true);
+  });
+
+  it("treats hyphen and space as equivalent", () => {
+    expect(intersects("Saint-Roch", "Saint Roch")).toBe(true);
+  });
+
+  it("expands Av. as first token", () => {
+    expect(intersects("Av. de la Gare", "Avenue de la Gare")).toBe(true);
+  });
+
+  it("expands Ch. only as first token", () => {
+    expect(intersects("Ch. de l'Eglise", "Chemin de l'Église")).toBe(true);
+    expect(intersects("Route du Ch", "Route du Chemin")).toBe(false);
+  });
+
+  it("expands Rte, Bd, Pl, Fbg", () => {
+    expect(intersects("Rte de Berne", "Route de Berne")).toBe(true);
+    expect(intersects("Bd de Grancy", "Boulevard de Grancy")).toBe(true);
+    expect(intersects("Pl. du Marché", "Place du Marché")).toBe(true);
+    expect(intersects("Fbg de l'Hôpital", "Faubourg de l'Hôpital")).toBe(true);
+  });
+
+  it("expands Pl. to Platz too (multi-language)", () => {
+    expect(intersects("Pl. Centrale", "Platz Centrale")).toBe(true);
+  });
+
+  it("expands St- to Saint and Sankt", () => {
+    expect(intersects("St-Roch", "Saint-Roch")).toBe(true);
+    expect(intersects("Place St-François", "Place Saint-François")).toBe(true);
+    expect(intersects("St. Gallerstrasse", "Sankt Gallerstrasse")).toBe(true);
+  });
+
+  it("expands glued German -str. suffix", () => {
+    expect(intersects("Bahnhofstr.", "Bahnhofstrasse")).toBe(true);
+    expect(intersects("Bahnhofstr", "Bahnhofstrasse")).toBe(true);
+  });
+
+  it("does not corrupt full -strasse names", () => {
+    expect(k2("Bahnhofstrasse")).toEqual(["bahnhofstrasse"]);
+  });
+
+  it("does NOT expand bare r. (too ambiguous)", () => {
+    expect(intersects("R. de Bourg", "Rue de Bourg")).toBe(false);
+  });
+
+  it("keeps Italian names intact", () => {
+    expect(k2("Via San Gottardo")).toEqual(["via san gottardo"]);
+  });
+});

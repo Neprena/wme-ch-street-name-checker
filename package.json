@@ -1,0 +1,29 @@
+{
+  "name": "wme-ch-street-name-checker",
+  "version": "0.1.0",
+  "description": "WME userscript validating Waze street names against the official Swiss street register (swisstopo)",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "author": "Yann Rapenne",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"*.mjs\""
+  },
+  "devDependencies": {
+    "@types/geojson": "^7946.0.16",
+    "@types/tampermonkey": "^5.0.5",
+    "esbuild": "^0.28.1",
+    "eslint": "^10.4.1",
+    "prettier": "^3.8.4",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.0",
+    "vitest": "^4.1.8",
+    "wme-sdk-typings": "https://web-assets.waze.com/wme_sdk_docs/production/latest/wme-sdk-typings.tgz"
+  }
+}

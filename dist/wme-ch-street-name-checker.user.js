@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WME CH Street Name Checker
 // @namespace    https://github.com/Neprena
-// @version      1.1.5
+// @version      1.1.6
 // @description  Validates Waze street names against the official Swiss street register (répertoire officiel des rues, swisstopo / geo.admin.ch)
 // @author       Yann Rapenne
 // @license      MIT
@@ -377,7 +377,7 @@
     legendCOSMETIC: "typography only (case, apostrophe, spacing), dashed line",
     legendVARIANT: "abbreviation, missing accent or article; official spelling suggested",
     legendNEAR: "probable typo; one close official name found",
-    legendWRONG_TYPE: "different way type (Chemin ↔ Route); unique official name suggested",
+    legendWRONG_TYPE: "different or missing way type (Chemin ↔ Route, X → Rue X); unique official name suggested",
     legendWRONG_STREET: "valid name, but the official street underneath has another name",
     geometryMatching: "Geometry matching (official street under the segment)",
     geometryMatchingTitle: "Enables UNNAMED suggestions, wrong-street detection and disambiguation by distance",
@@ -452,7 +452,7 @@
     legendCOSMETIC: "typographie uniquement (casse, apostrophe, espaces), trait pointillé",
     legendVARIANT: "abréviation, accent ou article manquant; orthographe officielle proposée",
     legendNEAR: "faute de frappe probable; un seul nom officiel proche",
-    legendWRONG_TYPE: "type de voie différent (Chemin ↔ Route); nom officiel unique proposé",
+    legendWRONG_TYPE: "type de voie différent ou manquant (Chemin ↔ Route, X → Rue X); nom officiel unique proposé",
     legendWRONG_STREET: "nom valide, mais la rue officielle dessous porte un autre nom",
     geometryMatching: "Matching géométrique (rue officielle sous le segment)",
     geometryMatchingTitle: "Active les suggestions UNNAMED, la détection de mauvaise rue et la désambiguïsation par distance",
@@ -527,7 +527,7 @@
     legendCOSMETIC: "nur Typografie (Gross-/Kleinschreibung, Apostroph, Leerzeichen), gestrichelt",
     legendVARIANT: "Abkürzung, fehlender Akzent oder Artikel; amtliche Schreibweise vorgeschlagen",
     legendNEAR: "wahrscheinlicher Tippfehler; ein einziger naher amtlicher Name",
-    legendWRONG_TYPE: "anderer Strassentyp (Weg ↔ Strasse); eindeutiger amtlicher Name vorgeschlagen",
+    legendWRONG_TYPE: "anderer oder fehlender Strassentyp (Weg ↔ Strasse, X → Strasse X); eindeutiger amtlicher Name vorgeschlagen",
     legendWRONG_STREET: "gültiger Name, aber die amtliche Strasse darunter heisst anders",
     geometryMatching: "Geometrie-Matching (amtliche Strasse unter dem Segment)",
     geometryMatchingTitle: "Aktiviert UNNAMED-Vorschläge, Falsche-Strasse-Erkennung und Distanz-Disambiguierung",
@@ -602,7 +602,7 @@
     legendCOSMETIC: "solo tipografia (maiuscole, apostrofo, spazi), linea tratteggiata",
     legendVARIANT: "abbreviazione, accento o articolo mancante; proposta la grafia ufficiale",
     legendNEAR: "probabile errore di battitura; un solo nome ufficiale vicino",
-    legendWRONG_TYPE: "tipo di via diverso (Chemin ↔ Route); proposto il nome ufficiale unico",
+    legendWRONG_TYPE: "tipo di via diverso o mancante (Chemin ↔ Route, X → Via X); proposto il nome ufficiale unico",
     legendWRONG_STREET: "nome valido, ma la strada ufficiale sottostante ha un altro nome",
     geometryMatching: "Matching geometrico (strada ufficiale sotto il segmento)",
     geometryMatchingTitle: "Attiva i suggerimenti UNNAMED, il rilevamento di strada errata e la disambiguazione per distanza",
@@ -985,6 +985,10 @@
     const stem = (cleaned.length > 0 ? cleaned : rest).join(" ");
     return stem.length >= 3 ? stem : null;
   }
+  function bareStem(key) {
+    const stem = key.split(" ").filter((token) => !ARTICLES.has(token)).map((token) => token.replace(/^[ld]'/, "")).join(" ");
+    return stem.length >= 3 ? stem : null;
+  }
   function stripArticles(key) {
     const tokens = key.split(" ").filter((token) => !ARTICLES.has(token)).map((token) => token.replace(/^[ld]'/, ""));
     if (tokens.length < 2) return null;
@@ -1052,6 +1056,9 @@
   }
 
   // src/matching/official-index.ts
+  function queryStem(primaryK2Key) {
+    return stemKey(primaryK2Key) ?? bareStem(primaryK2Key);
+  }
   function compareNameToCandidate(query, candidate) {
     if (k0(query) === k0(candidate)) return "exact";
     if (k1(query) === k1(candidate)) return "cosmetic";
@@ -1063,9 +1070,11 @@
     if (q && c) {
       const maxDist = q.length < 8 ? 1 : 2;
       if (damerauLevenshtein(q, c, maxDist) <= maxDist) return "near";
-      const qs = stemKey(q);
-      const cs = stemKey(c);
-      if (qs && cs && qs === cs) return "stem";
+      if (stemKey(q) || stemKey(c)) {
+        const qs = queryStem(q);
+        const cs = queryStem(c);
+        if (qs && cs && qs === cs) return "stem";
+      }
     }
     return null;
   }
@@ -1163,7 +1172,7 @@
     stemLookup(name, locality) {
       const primary = k2(name)[0];
       if (!primary) return null;
-      const stem = stemKey(primary);
+      const stem = queryStem(primary);
       if (!stem) return null;
       const candidates = this.byStem.get(stem);
       if (!candidates) return null;
@@ -2045,7 +2054,7 @@ ${statusChipRules}
     }
     buildFooter() {
       const footer = el("div", "chk-footer");
-      footer.appendChild(el("span", "chk-muted", `v${"1.1.5"} · `));
+      footer.appendChild(el("span", "chk-muted", `v${"1.1.6"} · `));
       const link = el("a", "", "Changelog");
       link.href = "https://github.com/Neprena/WME-CH-Street-Name-Checker/blob/main/CHANGELOG.md";
       link.target = "_blank";
@@ -2606,7 +2615,7 @@ ${statusChipRules}
     new EditPanelBox(sdk2, scanner, settings).init();
     registerShortcuts(sdk2, scanner, settings, { nextIssue: () => tab.selectNextIssue() });
     scanner.start();
-    log.info(`v${"1.1.5"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
+    log.info(`v${"1.1.6"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
   }
   main().catch((err) => log.error("Initialization failed", err));
 })();

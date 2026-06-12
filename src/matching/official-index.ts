@@ -1,6 +1,15 @@
 import type { OfficialStreet } from "../geoadmin/types";
 import { damerauLevenshtein } from "./distance";
-import { foldAccents, k0, k1, k2, stemKey } from "./normalize";
+import { bareStem, foldAccents, k0, k1, k2, stemKey } from "./normalize";
+
+/**
+ * Stem used to MATCH a name against the stem index. Names without a way-type
+ * word fall back to their article-stripped form: Waze "Vers-Chez-Cherbuin"
+ * must reach the official "Rue Vers-chez-Cherbuin" (stem "vers chez cherbuin").
+ */
+function queryStem(primaryK2Key: string): string | null {
+  return stemKey(primaryK2Key) ?? bareStem(primaryK2Key);
+}
 
 /**
  * One-to-one comparison of a Waze name against a single candidate (typically
@@ -21,9 +30,13 @@ export function compareNameToCandidate(
   if (q && c) {
     const maxDist = q.length < 8 ? 1 : 2;
     if (damerauLevenshtein(q, c, maxDist) <= maxDist) return "near";
-    const qs = stemKey(q);
-    const cs = stemKey(c);
-    if (qs && cs && qs === cs) return "stem";
+    // stem comparison: at least one side must carry a real way-type word,
+    // the other may be a bare name ("Vers-Chez-Cherbuin" vs "Rue Vers-chez-Cherbuin")
+    if (stemKey(q) || stemKey(c)) {
+      const qs = queryStem(q);
+      const cs = queryStem(c);
+      if (qs && cs && qs === cs) return "stem";
+    }
   }
   return null;
 }
@@ -166,7 +179,7 @@ export class OfficialIndex {
   private stemLookup(name: string, locality?: string): MatchResult | null {
     const primary = k2(name)[0];
     if (!primary) return null;
-    const stem = stemKey(primary);
+    const stem = queryStem(primary);
     if (!stem) return null;
     const candidates = this.byStem.get(stem);
     if (!candidates) return null;

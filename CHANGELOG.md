@@ -3,6 +3,11 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [1.1.6] - 2026-06-12
+
+### Fixed
+- Names lacking their way-type word were reported NOT_FOUND (real case: Waze "Vers-Chez-Cherbuin" vs official "Rue Vers-chez-Cherbuin" in Corcelles-près-Payerne). Bare names now stem-match against typed official names, with the same single-candidate ambiguity guard, both in the area lookup and in the geometry-based one-to-one comparison.
+
 ## [1.1.5] - 2026-06-12
 
 ### Changed

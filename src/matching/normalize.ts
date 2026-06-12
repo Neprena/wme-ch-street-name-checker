@@ -114,6 +114,19 @@ export function stemKey(key: string): string | null {
   return stem.length >= 3 ? stem : null;
 }
 
+/**
+ * Article stripping without the two-token guard, for stem comparisons of names
+ * that carry no way-type word ("La Bricoleta" -> "bricoleta").
+ */
+export function bareStem(key: string): string | null {
+  const stem = key
+    .split(" ")
+    .filter((token) => !ARTICLES.has(token))
+    .map((token) => token.replace(/^[ld]'/, ""))
+    .join(" ");
+  return stem.length >= 3 ? stem : null;
+}
+
 /** Article-stripped form of a K2 key; null when stripping would leave < 2 tokens. */
 export function stripArticles(key: string): string | null {
   const tokens = key

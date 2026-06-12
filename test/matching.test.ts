@@ -137,6 +137,30 @@ describe("way-type stem matching (WRONG_TYPE)", () => {
     expect(m?.candidates).toHaveLength(2);
   });
 
+  it("matches a bare name against an official name WITH a way type", () => {
+    const local = new OfficialIndex([
+      makeOfficial("Rue Vers-chez-Cherbuin", { zipLabel: "1562 Corcelles-près-Payerne" }),
+    ]);
+    const m = local.lookup("Vers-Chez-Cherbuin");
+    expect(m?.level).toBe("stem");
+    expect(m?.entry.namePart).toBe("Rue Vers-chez-Cherbuin");
+  });
+
+  it("matches a bare name with articles against the typed official name", () => {
+    const local = new OfficialIndex([makeOfficial("Route de la Bricoleta")]);
+    const m = local.lookup("La Bricoleta");
+    expect(m?.level).toBe("stem");
+    expect(m?.entry.namePart).toBe("Route de la Bricoleta");
+  });
+
+  it("keeps the ambiguity guard for bare names", () => {
+    const local = new OfficialIndex([
+      makeOfficial("Route du Moulin"),
+      makeOfficial("Rue du Moulin"),
+    ]);
+    expect(local.lookup("Moulin")).toBeNull();
+  });
+
   it("does not fire without a recognizable way type", () => {
     const local = new OfficialIndex([makeOfficial("Route de la Guérite")]);
     expect(local.lookup("La Bricoleta")).toBeNull();

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WME CH Street Name Checker
 // @namespace    https://github.com/Neprena
-// @version      1.5.2
+// @version      1.6.0
 // @description  Validates Waze street names against the official Swiss street register (répertoire officiel des rues, swisstopo / geo.admin.ch)
 // @author       Yann Rapenne
 // @license      MIT
@@ -1269,7 +1269,12 @@
   var M_PER_DEG_LON_EQUATOR = 111320;
   var GRID_DEG = 1e-3;
   var NEAR_STREET_M = 25;
+  var SUGGEST_MAX_M = 20;
   var FAR_STREET_M = 40;
+  var MAX_BEARING_DIFF_RAD = 35 * Math.PI / 180;
+  var MIN_COVERAGE = 0.6;
+  var CONTEST_MARGIN_M = 5;
+  var WRONG_STREET_MIN_COVERAGE = 0.8;
   function distancePointToSegmentM(p, a, b) {
     const lonScale = M_PER_DEG_LON_EQUATOR * Math.cos(p[1] * Math.PI / 180);
     const px = p[0] * lonScale;
@@ -1289,6 +1294,17 @@
     const cy = ay + t2 * dy;
     return Math.hypot(px - cx, py - cy);
   }
+  function bearingOf(a, b) {
+    const lonScale = Math.cos(a[1] * Math.PI / 180);
+    const dx = (b[0] - a[0]) * lonScale;
+    const dy = b[1] - a[1];
+    const angle = Math.atan2(dy, dx);
+    return (angle % Math.PI + Math.PI) % Math.PI;
+  }
+  function bearingDiff(b1, b2) {
+    const d = Math.abs(b1 - b2) % Math.PI;
+    return Math.min(d, Math.PI - d);
+  }
   var SpatialIndex = class {
     grid = /* @__PURE__ */ new Map();
     size;
@@ -1304,7 +1320,7 @@
             const a = line[i];
             const b = line[i + 1];
             count++;
-            const seg = { entry, a, b };
+            const seg = { entry, a, b, bearing: bearingOf(a, b) };
             const x0 = Math.floor(Math.min(a[0], b[0]) / GRID_DEG);
             const x1 = Math.floor(Math.max(a[0], b[0]) / GRID_DEG);
             const y0 = Math.floor(Math.min(a[1], b[1]) / GRID_DEG);
@@ -1322,29 +1338,36 @@
       }
       this.size = count;
     }
-    /** Closest official street to the point, within maxMeters (3×3 cell search). */
-    nearest(point, maxMeters) {
+    /**
+     * All streets within maxMeters of the point (one minimal distance per street),
+     * restricted to sub-segments roughly parallel to `bearing` when provided.
+     */
+    candidatesAt(point, maxMeters, bearing) {
       const cx = Math.floor(point[0] / GRID_DEG);
       const cy = Math.floor(point[1] / GRID_DEG);
-      let best = null;
+      const byEsid = /* @__PURE__ */ new Map();
       for (let x = cx - 1; x <= cx + 1; x++) {
         for (let y = cy - 1; y <= cy + 1; y++) {
           for (const seg of this.grid.get(`${x}:${y}`) ?? []) {
-            const d = distancePointToSegmentM(point, seg.a, seg.b);
-            if (d <= maxMeters && (!best || d < best.distanceM)) {
-              best = { entry: seg.entry, distanceM: d };
+            if (bearing !== void 0 && bearingDiff(seg.bearing, bearing) > MAX_BEARING_DIFF_RAD) {
+              continue;
             }
+            const d = distancePointToSegmentM(point, seg.a, seg.b);
+            if (d > maxMeters) continue;
+            const esid = seg.entry.street.esid;
+            const known = byEsid.get(esid);
+            if (!known || d < known.distanceM) byEsid.set(esid, { entry: seg.entry, distanceM: d });
           }
         }
       }
-      return best;
+      return byEsid;
     }
   };
   var SAMPLE_FRACTIONS = [0.1, 0.3, 0.5, 0.7, 0.9];
-  function samplePoints(geometry) {
+  function sampleWithBearings(geometry) {
     const coords = geometry.coordinates;
     if (coords.length === 0) return [];
-    if (coords.length === 1) return [coords[0]];
+    if (coords.length === 1) return [{ point: coords[0], bearing: null }];
     const lonScale = Math.cos(coords[0][1] * Math.PI / 180);
     const planar = (a, b) => Math.hypot((b[0] - a[0]) * lonScale, b[1] - a[1]);
     const cumulative = [0];
@@ -1354,7 +1377,7 @@
       );
     }
     const total = cumulative[cumulative.length - 1];
-    if (total === 0) return [coords[0]];
+    if (total === 0) return [{ point: coords[0], bearing: null }];
     const fractions = coords.length === 2 ? [0.5] : SAMPLE_FRACTIONS;
     return fractions.map((fraction) => {
       const target = fraction * total;
@@ -1365,33 +1388,51 @@
       const t2 = stepLength > 0 ? (target - before) / stepLength : 0;
       const a = coords[i - 1];
       const b = coords[i];
-      return [
-        a[0] + (b[0] - a[0]) * t2,
-        a[1] + (b[1] - a[1]) * t2
-      ];
+      return {
+        point: [
+          a[0] + (b[0] - a[0]) * t2,
+          a[1] + (b[1] - a[1]) * t2
+        ],
+        bearing: stepLength > 0 || planar(a, b) > 0 ? bearingOf(a, b) : null
+      };
     });
   }
+  function samplePoints(geometry) {
+    return sampleWithBearings(geometry).map((sample) => sample.point);
+  }
   function nearestOfficial(geometry, index, maxMeters = NEAR_STREET_M) {
-    const votes = /* @__PURE__ */ new Map();
-    for (const point of samplePoints(geometry)) {
-      const hit = index.nearest(point, maxMeters);
-      if (!hit) continue;
-      const esid = hit.entry.street.esid;
-      const vote = votes.get(esid);
-      if (vote) {
-        vote.count++;
-        vote.minD = Math.min(vote.minD, hit.distanceM);
-      } else {
-        votes.set(esid, { entry: hit.entry, count: 1, minD: hit.distanceM });
+    const samples = sampleWithBearings(geometry);
+    if (samples.length === 0) return null;
+    const tallies = /* @__PURE__ */ new Map();
+    for (const sample of samples) {
+      const candidates = index.candidatesAt(sample.point, maxMeters, sample.bearing ?? void 0);
+      let best = null;
+      for (const [esid, { entry, distanceM }] of candidates) {
+        let tally = tallies.get(esid);
+        if (!tally) {
+          tally = { entry, wins: 0, presence: 0, minD: Infinity };
+          tallies.set(esid, tally);
+        }
+        tally.presence++;
+        tally.minD = Math.min(tally.minD, distanceM);
+        if (!best || distanceM < best.d) best = { esid, d: distanceM };
+      }
+      if (best) tallies.get(best.esid).wins++;
+    }
+    let winner = null;
+    for (const tally of tallies.values()) {
+      if (!winner || tally.wins > winner.wins || tally.wins === winner.wins && tally.minD < winner.minD) {
+        winner = tally;
       }
     }
-    let best = null;
-    for (const vote of votes.values()) {
-      if (!best || vote.count > best.count || vote.count === best.count && vote.minD < best.minD) {
-        best = vote;
-      }
+    if (!winner || winner.wins === 0) return null;
+    const coverage = winner.wins / samples.length;
+    if (coverage < MIN_COVERAGE) return null;
+    for (const tally of tallies.values()) {
+      if (tally === winner) continue;
+      if (tally.presence >= 2 && tally.minD - winner.minD < CONTEST_MARGIN_M) return null;
     }
-    return best ? { entry: best.entry, distanceM: best.minD } : null;
+    return { entry: winner.entry, distanceM: winner.minD, coverage };
   }
   function distanceToLinesM(geometry, lines) {
     let min = Infinity;
@@ -1436,7 +1477,7 @@
     };
     if (!currentName) {
       if (segment.junctionId !== null) return { kind: "skipped" };
-      const suggestion = nearest && nearest.distanceM <= NEAR_STREET_M ? nearest.entry : null;
+      const suggestion = nearest && nearest.distanceM <= SUGGEST_MAX_M ? nearest.entry : null;
       return {
         kind: "issue",
         issue: {
@@ -1455,7 +1496,7 @@
     const match = index.lookup(currentName, locality);
     if (match) {
       if (match.level === "exact") {
-        if (nearest && nearest.distanceM <= NEAR_STREET_M && k1(nearest.entry.namePart) !== k1(currentName) && !nearest.entry.street.label.includes(currentName) && Math.min(...match.candidates.map((c) => distanceToEntryM(segment.geometry, c))) > FAR_STREET_M) {
+        if (nearest && nearest.distanceM <= SUGGEST_MAX_M && nearest.coverage >= WRONG_STREET_MIN_COVERAGE && k1(nearest.entry.namePart) !== k1(currentName) && !nearest.entry.street.label.includes(currentName) && Math.min(...match.candidates.map((c) => distanceToEntryM(segment.geometry, c))) > FAR_STREET_M) {
           return {
             kind: "issue",
             issue: {
@@ -1508,7 +1549,7 @@
         }
       }
     }
-    if (nearest && nearest.distanceM <= NEAR_STREET_M) {
+    if (nearest && nearest.distanceM <= SUGGEST_MAX_M) {
       const level = compareNameToCandidate(currentName, nearest.entry.namePart);
       if (level && level !== "exact") {
         const statusByLevel = {
@@ -2189,7 +2230,7 @@ ${statusChipRules}
     }
     buildFooter() {
       const footer = el("div", "chk-footer");
-      footer.appendChild(el("span", "chk-muted", `v${"1.5.2"} · `));
+      footer.appendChild(el("span", "chk-muted", `v${"1.6.0"} · `));
       const link = el("a", "", "Changelog");
       link.href = "https://github.com/Neprena/WME-CH-Street-Name-Checker/blob/main/CHANGELOG.md";
       link.target = "_blank";
@@ -2797,7 +2838,7 @@ ${statusChipRules}
     new EditPanelBox(sdk2, scanner, settings).init();
     registerShortcuts(sdk2, scanner, settings, { nextIssue: () => tab.selectNextIssue() });
     scanner.start();
-    log.info(`v${"1.5.2"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
+    log.info(`v${"1.6.0"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
   }
   main().catch((err) => log.error("Initialization failed", err));
 })();

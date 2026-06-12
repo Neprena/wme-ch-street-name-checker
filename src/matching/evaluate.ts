@@ -3,7 +3,13 @@ import type { Segment, SegmentAddress } from "wme-sdk-typings";
 import type { Settings } from "../settings";
 import { isRouteDesignation, k1 } from "./normalize";
 import { compareNameToCandidate, type IndexedEntry, type OfficialIndex } from "./official-index";
-import { distanceToEntryM, FAR_STREET_M, NEAR_STREET_M, type NearestResult } from "./spatial";
+import {
+  distanceToEntryM,
+  FAR_STREET_M,
+  SUGGEST_MAX_M,
+  WRONG_STREET_MIN_COVERAGE,
+  type NearestResult,
+} from "./spatial";
 
 export type IssueStatus =
   | "COSMETIC"
@@ -90,7 +96,7 @@ export function evaluateSegment(
     if (segment.junctionId !== null) return { kind: "skipped" };
     // With geometry matching, the official street under the segment becomes
     // a one-click suggestion.
-    const suggestion = nearest && nearest.distanceM <= NEAR_STREET_M ? nearest.entry : null;
+    const suggestion = nearest && nearest.distanceM <= SUGGEST_MAX_M ? nearest.entry : null;
     return {
       kind: "issue",
       issue: {
@@ -121,7 +127,8 @@ export function evaluateSegment(
       // clearly far away AND another official street is clearly underneath.
       if (
         nearest &&
-        nearest.distanceM <= NEAR_STREET_M &&
+        nearest.distanceM <= SUGGEST_MAX_M &&
+        nearest.coverage >= WRONG_STREET_MIN_COVERAGE &&
         k1(nearest.entry.namePart) !== k1(currentName) &&
         !nearest.entry.street.label.includes(currentName) &&
         Math.min(...match.candidates.map((c) => distanceToEntryM(segment.geometry, c))) >
@@ -184,7 +191,7 @@ export function evaluateSegment(
   // Last chance before NOT_FOUND: one-to-one comparison against the official
   // street under the segment. Resolves cases the set-based lookup dropped as
   // ambiguous (two stems or two fuzzy candidates) - proximity disambiguates.
-  if (nearest && nearest.distanceM <= NEAR_STREET_M) {
+  if (nearest && nearest.distanceM <= SUGGEST_MAX_M) {
     const level = compareNameToCandidate(currentName, nearest.entry.namePart);
     if (level && level !== "exact") {
       const statusByLevel = {

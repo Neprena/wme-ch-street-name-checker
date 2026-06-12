@@ -9,6 +9,8 @@ import {
   SpatialIndex,
 } from "../src/matching/spatial";
 import { makeOfficial } from "./fixtures/swiss-names";
+import { evaluateSegment } from "../src/matching/evaluate";
+import { DEFAULT_SETTINGS } from "../src/settings";
 
 // Around Lausanne (lat 46.52): 0.0001° lat ≈ 11.06 m, 0.0001° lon ≈ 7.66 m.
 const LAT = 46.52;
@@ -196,5 +198,117 @@ describe("distanceToEntryM", () => {
   it("returns Infinity without geometry", () => {
     const index = new OfficialIndex([makeOfficial("Sans Géométrie")]);
     expect(distanceToEntryM(segmentAt(0), index.list[0]!)).toBe(Infinity);
+  });
+});
+
+describe("false-positive guards", () => {
+  const M = 1 / 110_574;
+
+  it("bearing filter: a perpendicular street crossing the segment never competes", () => {
+    // vertical official axis crossing the horizontal segment right at its middle
+    const index = new OfficialIndex([
+      street("Rue Transversale", [
+        [
+          [6.605, LAT - 50 * M],
+          [6.605, LAT + 50 * M],
+        ],
+      ]),
+    ]);
+    const spatial = new SpatialIndex(index.list);
+    expect(nearestOfficial(segmentAt(0), spatial)).toBeNull();
+  });
+
+  it("bearing filter: a parallel street at 8 m still matches", () => {
+    const index = new OfficialIndex([axisAt(8, "Rue Parallèle")]);
+    const spatial = new SpatialIndex(index.list);
+    expect(nearestOfficial(segmentAt(0), spatial)?.entry.namePart).toBe("Rue Parallèle");
+  });
+
+  it("bearing filter compares locally: an L-shaped segment on its own L-shaped axis matches", () => {
+    const lShape: number[][] = [
+      [6.6, LAT],
+      [6.601, LAT], // ~77 m east
+      [6.601, LAT + 77 * M], // then ~77 m north
+    ];
+    const index = new OfficialIndex([street("Rue en Coude", [lShape])]);
+    const spatial = new SpatialIndex(index.list);
+    const segment: LineString = { type: "LineString", coordinates: lShape };
+    const hit = nearestOfficial(segment, spatial);
+    expect(hit?.entry.namePart).toBe("Rue en Coude");
+    expect(hit?.coverage).toBe(1);
+  });
+
+  it("contested: two parallel streets 3 m apart in distance make the vote abstain", () => {
+    const index = new OfficialIndex([axisAt(10, "Rue Dessus"), axisAt(-13, "Rue Dessous")]);
+    const spatial = new SpatialIndex(index.list);
+    // segment at 0: 10 m from one axis, 13 m from the other -> margin 3 < 5
+    expect(nearestOfficial(segmentAt(0), spatial)).toBeNull();
+  });
+
+  it("not contested: a clear 19 m margin keeps the winner", () => {
+    const index = new OfficialIndex([axisAt(5, "Rue Proche"), axisAt(-24, "Rue Lointaine")]);
+    const spatial = new SpatialIndex(index.list);
+    expect(nearestOfficial(segmentAt(0), spatial)?.entry.namePart).toBe("Rue Proche");
+  });
+
+  it("coverage: an axis along 40% of the segment does not win the vote", () => {
+    // axis covering only the first ~40% of a 100 m segment (samples at 10/30%)
+    const index = new OfficialIndex([
+      street("Rue Partielle", [
+        [
+          [6.602, LAT],
+          [6.6044, LAT],
+        ],
+      ]),
+    ]);
+    const spatial = new SpatialIndex(index.list);
+    const segment: LineString = {
+      type: "LineString",
+      coordinates: [
+        [6.602, LAT],
+        [6.604, LAT],
+        [6.606, LAT],
+        [6.608, LAT],
+      ],
+    };
+    expect(nearestOfficial(segment, spatial)).toBeNull();
+  });
+
+  it("WRONG_STREET needs near-full coverage", () => {
+    // other street parallel at 5 m but covering only ~3 of 5 samples;
+    // own street exists 200 m away (far), so without the coverage guard
+    // this would be WRONG_STREET
+    const officials = [
+      street("Rue Couvrante", [
+        [
+          [6.602, LAT + 5 * M],
+          [6.6056, LAT + 5 * M],
+        ],
+      ]),
+      axisAt(200, "Rue Officielle Lointaine"),
+    ];
+    const index = new OfficialIndex(officials);
+    const spatial = new SpatialIndex(index.list);
+    const segment: LineString = {
+      type: "LineString",
+      coordinates: [
+        [6.602, LAT],
+        [6.604, LAT],
+        [6.606, LAT],
+        [6.608, LAT],
+      ],
+    };
+    const nearest = nearestOfficial(segment, spatial);
+    expect(nearest?.entry.namePart).toBe("Rue Couvrante");
+    expect(nearest && nearest.coverage < 0.8).toBe(true);
+    const verdict = evaluateSegment(
+      { id: 1, roadType: 1, junctionId: null, length: 100, geometry: segment, primaryStreetId: 1, alternateStreetIds: [] } as never,
+      { street: { id: 1, name: "Rue Officielle Lointaine" }, city: { id: 1, name: "Lausanne" }, state: null, country: null, isEmpty: false, altStreets: [] } as never,
+      index,
+      { ...DEFAULT_SETTINGS },
+      nearest,
+    );
+    // not WRONG_STREET thanks to the coverage guard; the exact name match wins
+    expect(verdict.kind).toBe("ok");
   });
 });

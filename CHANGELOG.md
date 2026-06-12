@@ -3,6 +3,15 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [1.6.0] - 2026-06-12
+
+### Changed
+- Geometry matching hardened against false positives:
+  - bearing filter: official sub-segments must be roughly parallel (within 35°) to the local Waze direction, so cross streets at junctions never compete; the comparison is local per sample, curved streets keep matching;
+  - coverage requirement: the winning street must be the closest at 60% of the samples or more, and WRONG_STREET demands 80%;
+  - contested vote: when another street runs within 5 m of the winner along the segment, the matcher abstains instead of guessing;
+  - acting thresholds tightened from 25 m to 20 m (search radius unchanged).
+
 ## [1.5.2] - 2026-06-12
 
 ### Fixed

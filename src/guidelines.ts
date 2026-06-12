@@ -22,10 +22,14 @@ function makeIssue(
   segment: Segment,
   status: Issue["status"],
   getAddress: GetAddressFn,
+  swissCountryId: number | null,
 ): Issue | null {
   const address = getAddress(segment.id);
-  // Swiss guidelines do not apply to foreign segments in border viewports
-  if (address?.country && address.country.abbr !== "CH") return null;
+  // Swiss guidelines do not apply to foreign segments in border viewports.
+  // Fail-open when the Swiss country id could not be resolved.
+  if (swissCountryId !== null && address?.country && address.country.id !== swissCountryId) {
+    return null;
+  }
   return {
     segmentId: segment.id,
     status,
@@ -45,7 +49,11 @@ function isOneWay(segment: Segment): boolean {
   return segment.isAtoB !== segment.isBtoA;
 }
 
-export function evaluateGuidelines(segments: Segment[], getAddress: GetAddressFn): Issue[] {
+export function evaluateGuidelines(
+  segments: Segment[],
+  getAddress: GetAddressFn,
+  swissCountryId: number | null = null,
+): Issue[] {
   const issues = new Map<number, Issue>();
   const byNodePair = new Map<string, Segment[]>();
 
@@ -54,7 +62,7 @@ export function evaluateGuidelines(segments: Segment[], getAddress: GetAddressFn
     const isRoundabout = segment.junctionId !== null;
 
     if (!isRoundabout && segment.length < MIN_SEGMENT_LENGTH_M) {
-      const issue = makeIssue(segment, "MICRO_SEGMENT", getAddress);
+      const issue = makeIssue(segment, "MICRO_SEGMENT", getAddress, swissCountryId);
       if (issue) issues.set(segment.id, issue);
     }
 
@@ -63,7 +71,7 @@ export function evaluateGuidelines(segments: Segment[], getAddress: GetAddressFn
       (isOneWay(segment) || segment.length < MIN_NARROW_STREET_LENGTH_M)
     ) {
       if (!issues.has(segment.id)) {
-        const issue = makeIssue(segment, "NARROW_MISUSE", getAddress);
+        const issue = makeIssue(segment, "NARROW_MISUSE", getAddress, swissCountryId);
         if (issue) issues.set(segment.id, issue);
       }
     }
@@ -72,7 +80,7 @@ export function evaluateGuidelines(segments: Segment[], getAddress: GetAddressFn
 
     // One-segment loop: both endpoints on the same node.
     if (segment.fromNodeId === segment.toNodeId) {
-      const issue = makeIssue(segment, "LOOP", getAddress);
+      const issue = makeIssue(segment, "LOOP", getAddress, swissCountryId);
       if (issue) issues.set(segment.id, issue);
       continue;
     }
@@ -90,7 +98,7 @@ export function evaluateGuidelines(segments: Segment[], getAddress: GetAddressFn
   for (const pair of byNodePair.values()) {
     if (pair.length < 2) continue;
     for (const segment of pair) {
-      const issue = makeIssue(segment, "LOOP", getAddress);
+      const issue = makeIssue(segment, "LOOP", getAddress, swissCountryId);
       if (issue) issues.set(segment.id, issue);
     }
   }

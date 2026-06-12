@@ -79,10 +79,15 @@ export function evaluateSegment(
   settings: Settings,
   /** Official street under the segment (geometry matching), when available. */
   nearest: NearestResult | null = null,
+  /** Resolved Swiss country id, or null when unknown (then no segment is excluded). */
+  swissCountryId: number | null = null,
 ): Verdict {
   if (!settings.checkedRoadTypes.includes(segment.roadType)) return { kind: "skipped" };
-  // the register only covers Switzerland; foreign segments in border viewports are ignored
-  if (address.country && address.country.abbr !== "CH") return { kind: "skipped" };
+  // The register only covers Switzerland; foreign segments in border viewports
+  // are ignored. Fail-open: without a resolved Swiss id, nothing is excluded.
+  if (swissCountryId !== null && address.country && address.country.id !== swissCountryId) {
+    return { kind: "skipped" };
+  }
 
   const currentName = address.street?.name?.trim() || null;
   const baseIssue = {

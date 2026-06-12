@@ -63,9 +63,14 @@ describe("MICRO_SEGMENT", () => {
 });
 
 describe("country guard", () => {
-  it("ignores foreign segments in border viewports", () => {
+  it("ignores foreign segments when the Swiss id is known", () => {
     const s = seg({ length: 3 } as Partial<Segment>);
-    expect(evaluateGuidelines([s], frenchAddress)).toHaveLength(0);
+    expect(evaluateGuidelines([s], frenchAddress, 1)).toHaveLength(0);
+  });
+
+  it("fails open when the Swiss id is unknown", () => {
+    const s = seg({ length: 3 } as Partial<Segment>);
+    expect(evaluateGuidelines([s], frenchAddress, null)).toHaveLength(1);
   });
 });
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WME CH Street Name Checker
 // @namespace    https://github.com/Neprena
-// @version      1.8.0
+// @version      1.8.1
 // @description  Validates Waze street names against the official Swiss street register (répertoire officiel des rues, swisstopo / geo.admin.ch)
 // @author       Yann Rapenne
 // @license      MIT
@@ -860,9 +860,11 @@
   var MIN_NARROW_STREET_LENGTH_M = 50;
   var NARROW_STREET_TYPE = 22;
   var DRIVABLE_TYPES = /* @__PURE__ */ new Set([1, 2, 3, 4, 6, 7, 8, 17, 20, 22]);
-  function makeIssue(segment, status, getAddress) {
+  function makeIssue(segment, status, getAddress, swissCountryId) {
     const address = getAddress(segment.id);
-    if (address?.country && address.country.abbr !== "CH") return null;
+    if (swissCountryId !== null && address?.country && address.country.id !== swissCountryId) {
+      return null;
+    }
     return {
       segmentId: segment.id,
       status,
@@ -880,25 +882,25 @@
   function isOneWay(segment) {
     return segment.isAtoB !== segment.isBtoA;
   }
-  function evaluateGuidelines(segments, getAddress) {
+  function evaluateGuidelines(segments, getAddress, swissCountryId = null) {
     const issues = /* @__PURE__ */ new Map();
     const byNodePair = /* @__PURE__ */ new Map();
     for (const segment of segments) {
       if (!DRIVABLE_TYPES.has(segment.roadType)) continue;
       const isRoundabout = segment.junctionId !== null;
       if (!isRoundabout && segment.length < MIN_SEGMENT_LENGTH_M) {
-        const issue = makeIssue(segment, "MICRO_SEGMENT", getAddress);
+        const issue = makeIssue(segment, "MICRO_SEGMENT", getAddress, swissCountryId);
         if (issue) issues.set(segment.id, issue);
       }
       if (segment.roadType === NARROW_STREET_TYPE && (isOneWay(segment) || segment.length < MIN_NARROW_STREET_LENGTH_M)) {
         if (!issues.has(segment.id)) {
-          const issue = makeIssue(segment, "NARROW_MISUSE", getAddress);
+          const issue = makeIssue(segment, "NARROW_MISUSE", getAddress, swissCountryId);
           if (issue) issues.set(segment.id, issue);
         }
       }
       if (isRoundabout || segment.fromNodeId === null || segment.toNodeId === null) continue;
       if (segment.fromNodeId === segment.toNodeId) {
-        const issue = makeIssue(segment, "LOOP", getAddress);
+        const issue = makeIssue(segment, "LOOP", getAddress, swissCountryId);
         if (issue) issues.set(segment.id, issue);
         continue;
       }
@@ -912,7 +914,7 @@
     for (const pair of byNodePair.values()) {
       if (pair.length < 2) continue;
       for (const segment of pair) {
-        const issue = makeIssue(segment, "LOOP", getAddress);
+        const issue = makeIssue(segment, "LOOP", getAddress, swissCountryId);
         if (issue) issues.set(segment.id, issue);
       }
     }
@@ -1483,9 +1485,11 @@
     if (entry.isSlashPart) note.fullLabel = entry.street.label;
     return Object.keys(note).length > 0 ? note : null;
   }
-  function evaluateSegment(segment, address, index, settings, nearest = null) {
+  function evaluateSegment(segment, address, index, settings, nearest = null, swissCountryId = null) {
     if (!settings.checkedRoadTypes.includes(segment.roadType)) return { kind: "skipped" };
-    if (address.country && address.country.abbr !== "CH") return { kind: "skipped" };
+    if (swissCountryId !== null && address.country && address.country.id !== swissCountryId) {
+      return { kind: "skipped" };
+    }
     const currentName = address.street?.name?.trim() || null;
     const baseIssue = {
       segmentId: segment.id,
@@ -1653,6 +1657,8 @@
     coveredTiles = null;
     /** Session cache: street name -> nationwide official axis polylines (or null). */
     nameLinesCache = /* @__PURE__ */ new Map();
+    /** Resolved once; null = not found (guard disabled), undefined = not tried yet. */
+    swissCountryId;
     listeners = [];
     snapshot = {
       state: "idle",
@@ -1781,6 +1787,28 @@
         this.publish({ state: "error", error: err instanceof Error ? err.message : String(err) });
       }
     }
+    /**
+     * Identify Switzerland in the loaded countries, by abbreviation or name in
+     * any of the national languages. Resolved lazily and cached; null disables
+     * the foreign-segment guard rather than excluding everything.
+     */
+    resolveSwissCountryId() {
+      if (this.swissCountryId !== void 0) return this.swissCountryId;
+      try {
+        const swiss = this.sdk.DataModel.Countries.getAll().find((country) => {
+          const abbr = (country.abbr ?? "").toUpperCase();
+          const name = (country.name ?? "").toLowerCase();
+          return abbr === "CH" || abbr === "CHE" || name === "switzerland" || name === "schweiz" || name === "suisse" || name === "svizzera";
+        });
+        this.swissCountryId = swiss ? swiss.id : null;
+        if (this.swissCountryId === null) {
+          log.warn("Switzerland not found in the countries data model; country guard disabled");
+        }
+      } catch {
+        this.swissCountryId = null;
+      }
+      return this.swissCountryId;
+    }
     /** Chunk size: keeps every main-thread task short while panning WME. */
     static EVAL_CHUNK = 250;
     /**
@@ -1794,6 +1822,7 @@
       const stats = { ok: 0, okAlt: 0, skipped: 0, total: 0 };
       const segments = this.sdk.DataModel.Segments.getAll();
       const spatial = settings.geometryMatching ? this.lastSpatialIndex : null;
+      const swissCountryId = this.resolveSwissCountryId();
       for (let i = 0; i < segments.length; i++) {
         if (i > 0 && i % _Scanner.EVAL_CHUNK === 0) {
           await new Promise((resolve) => setTimeout(resolve, 0));
@@ -1809,7 +1838,7 @@
         try {
           const address = this.sdk.DataModel.Segments.getAddress({ segmentId: segment.id });
           const nearest = spatial && settings.checkedRoadTypes.includes(segment.roadType) ? nearestOfficial(segment.geometry, spatial) : null;
-          verdict = evaluateSegment(segment, address, index, settings, nearest);
+          verdict = evaluateSegment(segment, address, index, settings, nearest, swissCountryId);
         } catch {
           stats.skipped++;
           continue;
@@ -1843,7 +1872,7 @@
             return null;
           }
         };
-        for (const issue of evaluateGuidelines(segments, getAddress)) {
+        for (const issue of evaluateGuidelines(segments, getAddress, swissCountryId)) {
           if (!issues.has(issue.segmentId) && settings.enabledStatuses.includes(issue.status)) {
             issues.set(issue.segmentId, issue);
           }
@@ -2302,7 +2331,7 @@ a.chk-geolink { text-decoration: none; border: 1px solid #ccc; border-radius: 3p
     }
     buildFooter() {
       const footer = el("div", "chk-footer");
-      footer.appendChild(el("span", "chk-muted", `v${"1.8.0"} · `));
+      footer.appendChild(el("span", "chk-muted", `v${"1.8.1"} · `));
       const link = el("a", "", "Changelog");
       link.href = "https://github.com/Neprena/WME-CH-Street-Name-Checker/blob/main/CHANGELOG.md";
       link.target = "_blank";
@@ -2933,7 +2962,7 @@ a.chk-geolink { text-decoration: none; border: 1px solid #ccc; border-radius: 3p
     new EditPanelBox(sdk2, scanner, settings).init();
     registerShortcuts(sdk2, scanner, settings, { nextIssue: () => tab.selectNextIssue() });
     scanner.start();
-    log.info(`v${"1.8.0"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
+    log.info(`v${"1.8.1"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
   }
   main().catch((err) => log.error("Initialization failed", err));
 })();

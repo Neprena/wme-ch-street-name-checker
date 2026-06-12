@@ -56,14 +56,18 @@ const index = new OfficialIndex(LAUSANNE_STREETS);
 const settings: Settings = { ...DEFAULT_SETTINGS };
 
 describe("evaluateSegment", () => {
-  it("skips segments outside Switzerland", () => {
-    const v = evaluateSegment(
-      makeSegment(),
-      makeAddress("Rue de la Paix", [], "Pontarlier", "FR"),
-      index,
-      settings,
-    );
+  it("skips segments outside Switzerland when the Swiss id is known", () => {
+    const foreign = makeAddress("Rue de la Paix", [], "Pontarlier", "FR");
+    (foreign as { country: { id: number } }).country.id = 2;
+    const v = evaluateSegment(makeSegment(), foreign, index, settings, null, 1);
     expect(v.kind).toBe("skipped");
+  });
+
+  it("fails open when the Swiss country id is unknown", () => {
+    const foreign = makeAddress("Rue du Grand-Pont", [], "Lausanne", "FR");
+    (foreign as { country: { id: number } }).country.id = 2;
+    const v = evaluateSegment(makeSegment(), foreign, index, settings, null, null);
+    expect(v.kind).toBe("ok");
   });
 
   it("skips unchecked road types", () => {

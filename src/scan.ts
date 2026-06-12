@@ -86,6 +86,8 @@ export class Scanner {
   private coveredTiles: Set<string> | null = null;
   /** Session cache: street name -> nationwide official axis polylines (or null). */
   private nameLinesCache = new Map<string, number[][][] | null>();
+  /** Resolved once; null = not found (guard disabled), undefined = not tried yet. */
+  private swissCountryId: number | null | undefined;
   private listeners: Array<(snapshot: ScanSnapshot) => void> = [];
   private snapshot: ScanSnapshot = {
     state: "idle",
@@ -236,6 +238,36 @@ export class Scanner {
     }
   }
 
+  /**
+   * Identify Switzerland in the loaded countries, by abbreviation or name in
+   * any of the national languages. Resolved lazily and cached; null disables
+   * the foreign-segment guard rather than excluding everything.
+   */
+  private resolveSwissCountryId(): number | null {
+    if (this.swissCountryId !== undefined) return this.swissCountryId;
+    try {
+      const swiss = this.sdk.DataModel.Countries.getAll().find((country) => {
+        const abbr = (country.abbr ?? "").toUpperCase();
+        const name = (country.name ?? "").toLowerCase();
+        return (
+          abbr === "CH" ||
+          abbr === "CHE" ||
+          name === "switzerland" ||
+          name === "schweiz" ||
+          name === "suisse" ||
+          name === "svizzera"
+        );
+      });
+      this.swissCountryId = swiss ? swiss.id : null;
+      if (this.swissCountryId === null) {
+        log.warn("Switzerland not found in the countries data model; country guard disabled");
+      }
+    } catch {
+      this.swissCountryId = null;
+    }
+    return this.swissCountryId;
+  }
+
   /** Chunk size: keeps every main-thread task short while panning WME. */
   private static readonly EVAL_CHUNK = 250;
 
@@ -250,6 +282,7 @@ export class Scanner {
     const stats = { ok: 0, okAlt: 0, skipped: 0, total: 0 };
     const segments = this.sdk.DataModel.Segments.getAll();
     const spatial = settings.geometryMatching ? this.lastSpatialIndex : null;
+    const swissCountryId = this.resolveSwissCountryId();
     for (let i = 0; i < segments.length; i++) {
       if (i > 0 && i % Scanner.EVAL_CHUNK === 0) {
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -272,7 +305,7 @@ export class Scanner {
           spatial && settings.checkedRoadTypes.includes(segment.roadType)
             ? nearestOfficial(segment.geometry, spatial)
             : null;
-        verdict = evaluateSegment(segment, address, index, settings, nearest);
+        verdict = evaluateSegment(segment, address, index, settings, nearest, swissCountryId);
       } catch {
         stats.skipped++;
         continue;
@@ -307,7 +340,7 @@ export class Scanner {
           return null;
         }
       };
-      for (const issue of evaluateGuidelines(segments, getAddress)) {
+      for (const issue of evaluateGuidelines(segments, getAddress, swissCountryId)) {
         if (!issues.has(issue.segmentId) && settings.enabledStatuses.includes(issue.status)) {
           issues.set(issue.segmentId, issue);
         }

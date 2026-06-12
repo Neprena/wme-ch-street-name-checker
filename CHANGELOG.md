@@ -3,6 +3,11 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [1.8.1] - 2026-06-12
+
+### Fixed
+- Nothing was detected anymore since 1.7.0: the foreign-segment guard compared the country abbreviation to a hardcoded "CH", which does not match what WME actually stores, so every Swiss segment was skipped. Switzerland is now identified at runtime from the countries data model (abbreviation CH/CHE or name in any national language) and the guard fails open when it cannot be resolved.
+
 ## [1.8.0] - 2026-06-12
 
 ### Added

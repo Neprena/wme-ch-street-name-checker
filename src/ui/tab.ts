@@ -297,6 +297,13 @@ export class TabUI {
       `${ROAD_TYPE_LABELS.get(issue.roadType) ?? `type ${issue.roadType}`} · ${Math.round(issue.length)} m${issue.cityName ? ` · ${issue.cityName}` : ""}`,
     );
     row.appendChild(meta);
+    const locateBtn = el("button", "chk-locate", "⌖");
+    locateBtn.title = t("locateTitle");
+    locateBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      this.locateSegment(issue);
+    });
+    row.appendChild(locateBtn);
     if (issue.fixable) {
       const fixBtn = el("button", "chk-fix-all", t("fix"));
       fixBtn.title = t("fixTitle", { name: issue.suggestion ?? "" });
@@ -308,6 +315,15 @@ export class TabUI {
     }
     row.addEventListener("click", () => this.selectSegment(issue.segmentId));
     return row;
+  }
+
+  private locateSegment(issue: Issue): void {
+    try {
+      this.sdk.Map.centerMapOnGeometry({ geometry: issue.geometry });
+    } catch {
+      // geometry may be stale; selection below still works if the segment is loaded
+    }
+    this.selectSegment(issue.segmentId);
   }
 
   private selectSegment(segmentId: number): void {

@@ -35,6 +35,7 @@ ${statusChipRules}
 .chk-row:hover { background: #f0f7ff; }
 .chk-row.chk-selected { background: #e0efff; }
 .chk-row-meta { color: #888; flex: 1; }
+.chk-locate { font-size: 13px; line-height: 1; padding: 0 5px; }
 .chk-settings summary { cursor: pointer; font-weight: bold; margin: 4px 0; }
 .chk-settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; margin: 4px 0; }
 .chk-settings label { display: flex; align-items: center; gap: 4px; font-weight: normal; }

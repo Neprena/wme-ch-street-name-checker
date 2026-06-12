@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WME CH Street Name Checker
 // @namespace    https://github.com/Neprena
-// @version      0.4.1
+// @version      0.4.2
 // @description  Validates Waze street names against the official Swiss street register (répertoire officiel des rues, swisstopo / geo.admin.ch)
 // @author       Yann Rapenne
 // @license      MIT
@@ -246,6 +246,7 @@
     rescanTitle: "Clear the cache and fetch the official register again",
     nextIssue: "Next issue",
     nextIssueTitle: "Select the next mismatching segment",
+    locateTitle: "Center the map on the segment",
     filterChipTitle: "Filter the list by this status",
     unnamed: "(unnamed)",
     noteUnofficial: "unofficial",
@@ -307,6 +308,7 @@
     rescanTitle: "Vider le cache et relire le répertoire officiel",
     nextIssue: "Écart suivant",
     nextIssueTitle: "Sélectionner le segment en écart suivant",
+    locateTitle: "Centrer la carte sur le segment",
     filterChipTitle: "Filtrer la liste sur ce statut",
     unnamed: "(sans nom)",
     noteUnofficial: "non officiel",
@@ -368,6 +370,7 @@
     rescanTitle: "Cache leeren und amtliches Verzeichnis neu laden",
     nextIssue: "Nächste Abweichung",
     nextIssueTitle: "Nächstes abweichendes Segment auswählen",
+    locateTitle: "Karte auf das Segment zentrieren",
     filterChipTitle: "Liste nach diesem Status filtern",
     unnamed: "(unbenannt)",
     noteUnofficial: "inoffiziell",
@@ -429,6 +432,7 @@
     rescanTitle: "Svuota la cache e rilegge il repertorio ufficiale",
     nextIssue: "Prossima differenza",
     nextIssueTitle: "Seleziona il prossimo segmento con differenza",
+    locateTitle: "Centra la mappa sul segmento",
     filterChipTitle: "Filtra l'elenco per questo stato",
     unnamed: "(senza nome)",
     noteUnofficial: "non ufficiale",
@@ -1283,6 +1287,7 @@ ${statusChipRules}
 .chk-row:hover { background: #f0f7ff; }
 .chk-row.chk-selected { background: #e0efff; }
 .chk-row-meta { color: #888; flex: 1; }
+.chk-locate { font-size: 13px; line-height: 1; padding: 0 5px; }
 .chk-settings summary { cursor: pointer; font-weight: bold; margin: 4px 0; }
 .chk-settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; margin: 4px 0; }
 .chk-settings label { display: flex; align-items: center; gap: 4px; font-weight: normal; }
@@ -1548,6 +1553,13 @@ ${statusChipRules}
         `${ROAD_TYPE_LABELS.get(issue.roadType) ?? `type ${issue.roadType}`} · ${Math.round(issue.length)} m${issue.cityName ? ` · ${issue.cityName}` : ""}`
       );
       row.appendChild(meta);
+      const locateBtn = el("button", "chk-locate", "⌖");
+      locateBtn.title = t("locateTitle");
+      locateBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        this.locateSegment(issue);
+      });
+      row.appendChild(locateBtn);
       if (issue.fixable) {
         const fixBtn = el("button", "chk-fix-all", t("fix"));
         fixBtn.title = t("fixTitle", { name: issue.suggestion ?? "" });
@@ -1559,6 +1571,13 @@ ${statusChipRules}
       }
       row.addEventListener("click", () => this.selectSegment(issue.segmentId));
       return row;
+    }
+    locateSegment(issue) {
+      try {
+        this.sdk.Map.centerMapOnGeometry({ geometry: issue.geometry });
+      } catch {
+      }
+      this.selectSegment(issue.segmentId);
     }
     selectSegment(segmentId) {
       try {
@@ -1735,7 +1754,7 @@ ${statusChipRules}
     const tab = new TabUI(sdk2, scanner, settings);
     await tab.init();
     scanner.start();
-    log.info(`v${"0.4.1"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
+    log.info(`v${"0.4.2"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
   }
   main().catch((err) => log.error("Initialization failed", err));
 })();

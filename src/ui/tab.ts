@@ -148,7 +148,25 @@ export class TabUI {
     this.chipsBox = el("div", "chk-chips");
     this.groupsBox = el("div", "chk-groups");
 
-    this.pane.append(header, this.chipsBox, this.groupsBox, this.buildLegend(), this.buildSettings());
+    this.pane.append(
+      header,
+      this.chipsBox,
+      this.groupsBox,
+      this.buildLegend(),
+      this.buildSettings(),
+      this.buildFooter(),
+    );
+  }
+
+  private buildFooter(): HTMLElement {
+    const footer = el("div", "chk-footer");
+    footer.appendChild(el("span", "chk-muted", `v${__SCRIPT_VERSION__} · `));
+    const link = el("a", "", "Changelog");
+    link.href = "https://github.com/Neprena/wme-ch-street-name-checker/blob/main/CHANGELOG.md";
+    link.target = "_blank";
+    link.rel = "noopener";
+    footer.appendChild(link);
+    return footer;
   }
 
   private buildLegend(): HTMLElement {

@@ -43,6 +43,7 @@ ${statusChipRules}
 .chk-empty { color: #4a8f3c; font-weight: bold; padding: 8px 0; }
 .chk-muted { color: #888; }
 .chk-error { color: #c00; }
+.chk-footer { font-size: 11px; border-top: 1px solid #eee; padding-top: 4px; margin-top: 2px; }
 `;
 
 let injected = false;

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WME CH Street Name Checker
 // @namespace    https://github.com/Neprena
-// @version      0.4.2
+// @version      0.4.3
 // @description  Validates Waze street names against the official Swiss street register (répertoire officiel des rues, swisstopo / geo.admin.ch)
 // @author       Yann Rapenne
 // @license      MIT
@@ -1295,6 +1295,7 @@ ${statusChipRules}
 .chk-empty { color: #4a8f3c; font-weight: bold; padding: 8px 0; }
 .chk-muted { color: #888; }
 .chk-error { color: #c00; }
+.chk-footer { font-size: 11px; border-top: 1px solid #eee; padding-top: 4px; margin-top: 2px; }
 `;
   var injected = false;
   function injectStyles() {
@@ -1420,7 +1421,24 @@ ${statusChipRules}
       header.append(this.statusLine, this.unsavedBadge, rescanBtn, nextBtn);
       this.chipsBox = el("div", "chk-chips");
       this.groupsBox = el("div", "chk-groups");
-      this.pane.append(header, this.chipsBox, this.groupsBox, this.buildLegend(), this.buildSettings());
+      this.pane.append(
+        header,
+        this.chipsBox,
+        this.groupsBox,
+        this.buildLegend(),
+        this.buildSettings(),
+        this.buildFooter()
+      );
+    }
+    buildFooter() {
+      const footer = el("div", "chk-footer");
+      footer.appendChild(el("span", "chk-muted", `v${"0.4.3"} · `));
+      const link = el("a", "", "Changelog");
+      link.href = "https://github.com/Neprena/wme-ch-street-name-checker/blob/main/CHANGELOG.md";
+      link.target = "_blank";
+      link.rel = "noopener";
+      footer.appendChild(link);
+      return footer;
     }
     buildLegend() {
       const details = el("details", "chk-settings");
@@ -1754,7 +1772,7 @@ ${statusChipRules}
     const tab = new TabUI(sdk2, scanner, settings);
     await tab.init();
     scanner.start();
-    log.info(`v${"0.4.2"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
+    log.info(`v${"0.4.3"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
   }
   main().catch((err) => log.error("Initialization failed", err));
 })();

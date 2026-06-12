@@ -188,49 +188,6 @@ Compares the street names of visible segments with the Swiss federal **official 
 
 </details>
 
-## Development
-
-```sh
-npm install
-npm test            # unit tests (matching, normalization, tiles, guidelines, i18n)
-npm run typecheck
-npm run build       # produces dist/wme-ch-street-name-checker.user.js
-npm run dev         # watch mode
-```
-
-Fast dev loop: install `dist/dev.user.js` once in Tampermonkey (enable "Allow access to file URLs" for the extension), run `npm run dev`, then reload WME after each change.
-
-### Architecture
-
-```
-src/
-├── main.user.ts        # WME SDK bootstrap + wiring
-├── sdk.ts              # getWmeSdk initialization (through unsafeWindow)
-├── i18n.ts             # EN/FR/DE/IT strings (typed, community-extensible)
-├── settings.ts         # settings + localStorage
-├── geoadmin/           # identify client + 0.02° tiles + LRU/TTL cache
-├── matching/           # K0/K1/K2 normalization, Damerau-Levenshtein, index, evaluation
-├── guidelines.ts       # Swiss guideline checks (micro-segments, loops, narrow streets)
-├── scan.ts             # orchestrator (events, debounce, generations)
-├── map-layer.ts        # highlight layer + layer switcher checkbox
-├── fix.ts              # applying official names (never calls save)
-└── ui/                 # sidebar tab
-```
-
-Matching uses three normalization levels: K0 (raw), K1 (cosmetic, accents kept), K2 (accents folded, hyphen ↔ space, abbreviations expanded - extensible table in `src/matching/normalize.ts`). Fuzzy matching only suggests when the candidate is unique.
-
-### Field-test checklist
-
-- Lausanne (FR), Bern (DE), Biel/Bienne (bilingual), Lugano (IT).
-- A viewport spanning two communes.
-- A freeway junction: everything should be skipped (unchecked types).
-- Introduce a deliberate typo → NEAR status with suggestion → fix → Ctrl+Z (do not save).
-- Network: ≤ 30 req/min, zero requests when returning to an already-scanned area (< 24 h).
-
-### Release process
-
-Update [CHANGELOG.md](CHANGELOG.md), `npm version patch|minor`, `npm run build`, commit and push - installed userscripts auto-update from the committed `dist/` build.
-
 ## Data & license
 
 Data: © swisstopo / geo.admin.ch, official directory of streets (`ch.swisstopo.amtliches-strassenverzeichnis`), free, no API key, FSDI fair use: 40 req/min.

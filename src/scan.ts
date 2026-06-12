@@ -1,5 +1,5 @@
-import type { WmeSDK } from "wme-sdk-typings";
-import type { TileFetcher } from "./geoadmin/tiles";
+import type { Segment, WmeSDK } from "wme-sdk-typings";
+import { tileKeyForPoint, tileKeysForBbox, type TileFetcher } from "./geoadmin/tiles";
 import type { Bbox } from "./geoadmin/types";
 import { evaluateGuidelines } from "./guidelines";
 import { log } from "./log";
@@ -58,6 +58,8 @@ export class Scanner {
   private controller: AbortController | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | undefined;
   private lastIndex: OfficialIndex | null = null;
+  /** Tile keys covered by lastIndex; segments outside are not name-checked. */
+  private coveredTiles: Set<string> | null = null;
   private listeners: Array<(snapshot: ScanSnapshot) => void> = [];
   private snapshot: ScanSnapshot = {
     state: "idle",
@@ -115,6 +117,7 @@ export class Scanner {
   rescan(): void {
     this.fetcher.cache.clear();
     this.lastIndex = null;
+    this.coveredTiles = null;
     this.requestScan();
   }
 
@@ -153,6 +156,7 @@ export class Scanner {
       this.publish({ state: "evaluating", progress: null });
       const index = new OfficialIndex(streets);
       this.lastIndex = index;
+      this.coveredTiles = new Set(tileKeysForBbox(bbox));
       this.evaluateAll(index);
       this.publish({ state: "done", officialStreetCount: index.streetCount });
     } catch (err) {
@@ -169,6 +173,13 @@ export class Scanner {
     const segments = this.sdk.DataModel.Segments.getAll();
     for (const segment of segments) {
       stats.total++;
+      // The WME data model loads segments well beyond the viewport; only
+      // name-check those inside the area we actually fetched officials for,
+      // otherwise every edge segment becomes a false NOT_FOUND.
+      if (!this.isCovered(segment)) {
+        stats.skipped++;
+        continue;
+      }
       let verdict;
       try {
         const address = this.sdk.DataModel.Segments.getAddress({ segmentId: segment.id });
@@ -206,6 +217,14 @@ export class Scanner {
       }
     }
     this.publish({ issues, stats, unsavedCount: this.safeUnsavedCount() });
+  }
+
+  private isCovered(segment: Segment): boolean {
+    const covered = this.coveredTiles;
+    if (!covered) return true;
+    return segment.geometry.coordinates.some(([lon, lat]) =>
+      covered.has(tileKeyForPoint(lon as number, lat as number)),
+    );
   }
 
   private safeUnsavedCount(): number {

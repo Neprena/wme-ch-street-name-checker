@@ -54,6 +54,13 @@ describe("OfficialIndex.lookup cascade", () => {
     expect(m?.entry.namePart).toBe("Chemin de l'Église");
   });
 
+  it("variant: missing article", () => {
+    const local = new OfficialIndex([makeOfficial("Chemin de la Montaz")]);
+    const m = local.lookup("Chemin de Montaz");
+    expect(m?.level).toBe("variant");
+    expect(m?.entry.namePart).toBe("Chemin de la Montaz");
+  });
+
   it("variant: glued German abbreviation", () => {
     const m = index.lookup("Bahnhofstr.");
     expect(m?.level).toBe("variant");

@@ -3,6 +3,14 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [0.5.0] - 2026-06-12
+
+### Fixed
+- Massive false `NOT_FOUND` reports near the viewport edges: the WME data model loads segments well beyond the visible area, and those segments were checked against an official-name index that did not cover them. Segments outside the fetched tiles are now skipped until you pan over them. (Reported on Poliez-Pittet, where "Chemin des Essinges" was flagged although it is in the federal register.)
+
+### Added
+- Article-insensitive matching (French/Italian function words): "Chemin de Montaz" now matches the official "Chemin de la Montaz" and is reported as a fixable `VARIANT` instead of `NOT_FOUND`. German articles are deliberately not stripped (integral to names like "Im Grund").
+
 ## [0.4.3] - 2026-06-12
 
 ### Added

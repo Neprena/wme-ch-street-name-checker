@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WME CH Street Name Checker
 // @namespace    https://github.com/Neprena
-// @version      0.4.3
+// @version      0.5.0
 // @description  Validates Waze street names against the official Swiss street register (répertoire officiel des rues, swisstopo / geo.admin.ch)
 // @author       Yann Rapenne
 // @license      MIT
@@ -153,6 +153,9 @@
     }
     return keys;
   }
+  function tileKeyForPoint(lon, lat) {
+    return `${Math.floor(lon / TILE_SIZE_DEG)}:${Math.floor(lat / TILE_SIZE_DEG)}`;
+  }
   function tileKeyToBbox(key) {
     const [xs, ys] = key.split(":");
     const x = Number(xs);
@@ -262,7 +265,7 @@
     allMatch: "All street names match ✓",
     legendTitle: "Legend",
     legendCOSMETIC: "typography only (case, apostrophe, spacing) — dashed line",
-    legendVARIANT: "abbreviation or missing accent; official spelling suggested",
+    legendVARIANT: "abbreviation, missing accent or article; official spelling suggested",
     legendNEAR: "probable typo; one close official name found",
     legendWRONG_CITY: "name exists, but in another locality (city scoping)",
     legendNOT_FOUND: "not found in the official register",
@@ -324,7 +327,7 @@
     allMatch: "Tous les noms de rues correspondent ✓",
     legendTitle: "Légende",
     legendCOSMETIC: "typographie uniquement (casse, apostrophe, espaces) — trait pointillé",
-    legendVARIANT: "abréviation ou accent manquant; orthographe officielle proposée",
+    legendVARIANT: "abréviation, accent ou article manquant; orthographe officielle proposée",
     legendNEAR: "faute de frappe probable; un seul nom officiel proche",
     legendWRONG_CITY: "le nom existe, mais dans une autre localité (scoping)",
     legendNOT_FOUND: "introuvable dans le répertoire officiel",
@@ -386,7 +389,7 @@
     allMatch: "Alle Strassennamen stimmen überein ✓",
     legendTitle: "Legende",
     legendCOSMETIC: "nur Typografie (Gross-/Kleinschreibung, Apostroph, Leerzeichen) — gestrichelt",
-    legendVARIANT: "Abkürzung oder fehlender Akzent; amtliche Schreibweise vorgeschlagen",
+    legendVARIANT: "Abkürzung, fehlender Akzent oder Artikel; amtliche Schreibweise vorgeschlagen",
     legendNEAR: "wahrscheinlicher Tippfehler; ein einziger naher amtlicher Name",
     legendWRONG_CITY: "Name existiert, aber in einer anderen Ortschaft (Scoping)",
     legendNOT_FOUND: "nicht im amtlichen Verzeichnis",
@@ -448,7 +451,7 @@
     allMatch: "Tutti i nomi delle strade corrispondono ✓",
     legendTitle: "Legenda",
     legendCOSMETIC: "solo tipografia (maiuscole, apostrofo, spazi) — linea tratteggiata",
-    legendVARIANT: "abbreviazione o accento mancante; proposta la grafia ufficiale",
+    legendVARIANT: "abbreviazione, accento o articolo mancante; proposta la grafia ufficiale",
     legendNEAR: "probabile errore di battitura; un solo nome ufficiale vicino",
     legendWRONG_CITY: "il nome esiste, ma in un'altra località (scoping)",
     legendNOT_FOUND: "non presente nel repertorio ufficiale",
@@ -684,6 +687,30 @@
   ];
   var ABBREV_MAP = new Map(ABBREVIATIONS.map((r) => [r.abbrev, r]));
   var MAX_VARIANTS = 8;
+  var ARTICLES = /* @__PURE__ */ new Set([
+    "de",
+    "du",
+    "des",
+    "la",
+    "le",
+    "les",
+    "di",
+    "da",
+    "del",
+    "della",
+    "delle",
+    "dei",
+    "degli",
+    "al",
+    "alla",
+    "ai"
+  ]);
+  function stripArticles(key) {
+    const tokens = key.split(" ").filter((token) => !ARTICLES.has(token)).map((token) => token.replace(/^[ld]'/, ""));
+    if (tokens.length < 2) return null;
+    const stripped = tokens.join(" ");
+    return stripped === key ? null : stripped;
+  }
   function k2(name) {
     let s = k1(name);
     s = foldAccents(s);
@@ -698,7 +725,12 @@
       const options = rule && (!rule.firstTokenOnly || i === 0) ? rule.expansions : [bare];
       variants = variants.flatMap((v) => options.map((option) => [...v, option])).slice(0, MAX_VARIANTS);
     });
-    return [...new Set(variants.map((v) => v.join(" ")))];
+    const keys = [...new Set(variants.map((v) => v.join(" ")))];
+    for (const key of [...keys]) {
+      const stripped = stripArticles(key);
+      if (stripped && !keys.includes(stripped)) keys.push(stripped);
+    }
+    return keys;
   }
 
   // src/matching/evaluate.ts
@@ -968,6 +1000,8 @@
     controller = null;
     debounceTimer;
     lastIndex = null;
+    /** Tile keys covered by lastIndex; segments outside are not name-checked. */
+    coveredTiles = null;
     listeners = [];
     snapshot = {
       state: "idle",
@@ -1013,6 +1047,7 @@
     rescan() {
       this.fetcher.cache.clear();
       this.lastIndex = null;
+      this.coveredTiles = null;
       this.requestScan();
     }
     /** Re-run evaluation against the last fetched official index, without refetching. */
@@ -1046,6 +1081,7 @@
         this.publish({ state: "evaluating", progress: null });
         const index = new OfficialIndex(streets);
         this.lastIndex = index;
+        this.coveredTiles = new Set(tileKeysForBbox(bbox));
         this.evaluateAll(index);
         this.publish({ state: "done", officialStreetCount: index.streetCount });
       } catch (err) {
@@ -1061,6 +1097,10 @@
       const segments = this.sdk.DataModel.Segments.getAll();
       for (const segment of segments) {
         stats.total++;
+        if (!this.isCovered(segment)) {
+          stats.skipped++;
+          continue;
+        }
         let verdict;
         try {
           const address = this.sdk.DataModel.Segments.getAddress({ segmentId: segment.id });
@@ -1097,6 +1137,13 @@
         }
       }
       this.publish({ issues, stats, unsavedCount: this.safeUnsavedCount() });
+    }
+    isCovered(segment) {
+      const covered = this.coveredTiles;
+      if (!covered) return true;
+      return segment.geometry.coordinates.some(
+        ([lon, lat]) => covered.has(tileKeyForPoint(lon, lat))
+      );
     }
     safeUnsavedCount() {
       try {
@@ -1432,7 +1479,7 @@ ${statusChipRules}
     }
     buildFooter() {
       const footer = el("div", "chk-footer");
-      footer.appendChild(el("span", "chk-muted", `v${"0.4.3"} · `));
+      footer.appendChild(el("span", "chk-muted", `v${"0.5.0"} · `));
       const link = el("a", "", "Changelog");
       link.href = "https://github.com/Neprena/wme-ch-street-name-checker/blob/main/CHANGELOG.md";
       link.target = "_blank";
@@ -1772,7 +1819,7 @@ ${statusChipRules}
     const tab = new TabUI(sdk2, scanner, settings);
     await tab.init();
     scanner.start();
-    log.info(`v${"0.4.3"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
+    log.info(`v${"0.5.0"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
   }
   main().catch((err) => log.error("Initialization failed", err));
 })();

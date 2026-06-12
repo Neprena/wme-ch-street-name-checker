@@ -26,7 +26,7 @@ Compare les noms de rues des segments visibles avec le **répertoire officiel de
 | Statut | Signification | Couleur |
 |---|---|---|
 | `COSMETIC` | Différence typographique (apostrophe, casse, espaces) | jaune pointillé |
-| `VARIANT` | Abréviation ou accent manquant (Av. → Avenue, Eglise → Église) | jaune |
+| `VARIANT` | Abréviation, accent ou article manquant (Av. → Avenue, Chemin de Montaz → Chemin de la Montaz) | jaune |
 | `NEAR` | Probable faute de frappe, suggestion unique | orange |
 | `WRONG_CITY` | Le nom existe, mais dans une autre localité (mode scoping) | rose |
 | `NOT_FOUND` | Introuvable dans le répertoire officiel | rouge |
@@ -64,7 +64,7 @@ Vergleicht die Strassennamen der sichtbaren Segmente mit dem **amtlichen Strasse
 | Status | Bedeutung | Farbe |
 |---|---|---|
 | `COSMETIC` | Nur Typografie (Apostroph, Gross-/Kleinschreibung, Leerzeichen) | gelb gestrichelt |
-| `VARIANT` | Abkürzung oder fehlender Akzent (Bahnhofstr. → Bahnhofstrasse) | gelb |
+| `VARIANT` | Abkürzung, fehlender Akzent oder Artikel (Bahnhofstr. → Bahnhofstrasse) | gelb |
 | `NEAR` | Wahrscheinlicher Tippfehler, eindeutiger Vorschlag | orange |
 | `WRONG_CITY` | Name existiert, aber in anderer Ortschaft (Scoping-Modus) | rosa |
 | `NOT_FOUND` | Nicht im amtlichen Verzeichnis | rot |
@@ -102,7 +102,7 @@ Confronta i nomi delle strade dei segmenti visibili con il **repertorio ufficial
 | Stato | Significato | Colore |
 |---|---|---|
 | `COSMETIC` | Solo tipografia (apostrofo, maiuscole, spazi) | giallo tratteggiato |
-| `VARIANT` | Abbreviazione o accento mancante | giallo |
+| `VARIANT` | Abbreviazione, accento o articolo mancante | giallo |
 | `NEAR` | Probabile errore di battitura, proposta unica | arancione |
 | `WRONG_CITY` | Il nome esiste, ma in un'altra località (scoping) | rosa |
 | `NOT_FOUND` | Assente dal repertorio ufficiale | rosso |
@@ -140,7 +140,7 @@ Compares the street names of visible segments with the Swiss federal **official 
 | Status | Meaning | Color |
 |---|---|---|
 | `COSMETIC` | Typography only (apostrophe, case, spacing) | dashed yellow |
-| `VARIANT` | Abbreviation or missing accent | yellow |
+| `VARIANT` | Abbreviation, missing accent or article | yellow |
 | `NEAR` | Probable typo, unique suggestion | orange |
 | `WRONG_CITY` | Name exists, but in another locality (scoping mode) | pink |
 | `NOT_FOUND` | Not in the official register | red |

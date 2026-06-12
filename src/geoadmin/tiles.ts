@@ -21,6 +21,10 @@ export function tileKeysForBbox(bbox: Bbox): string[] {
   return keys;
 }
 
+export function tileKeyForPoint(lon: number, lat: number): string {
+  return `${Math.floor(lon / TILE_SIZE_DEG)}:${Math.floor(lat / TILE_SIZE_DEG)}`;
+}
+
 export function tileKeyToBbox(key: string): Bbox {
   const [xs, ys] = key.split(":");
   const x = Number(xs);

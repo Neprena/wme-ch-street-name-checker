@@ -51,6 +51,33 @@ describe("foldAccents", () => {
   });
 });
 
+
+describe("article-insensitive K2 variants", () => {
+  const intersects = (a: string, b: string): boolean =>
+    k2(a).some((key) => k2(b).includes(key));
+
+  it("matches names differing by a French article", () => {
+    expect(intersects("Chemin de Montaz", "Chemin de la Montaz")).toBe(true);
+    expect(intersects("Route des Essertines", "Route Essertines")).toBe(true);
+  });
+
+  it("strips elided articles", () => {
+    expect(intersects("Chemin de l'Eglise", "Chemin Eglise")).toBe(true);
+  });
+
+  it("keeps strict variants first so exact K2 wins in the cascade", () => {
+    expect(k2("Chemin de la Montaz")[0]).toBe("chemin de la montaz");
+  });
+
+  it("does not strip German articles", () => {
+    expect(intersects("Im Grund", "Grund")).toBe(false);
+  });
+
+  it("never strips down to a single token", () => {
+    expect(k2("La Place")).toEqual(["la place"]);
+  });
+});
+
 describe("k2 (expanded)", () => {
   const intersects = (a: string, b: string): boolean =>
     k2(a).some((key) => k2(b).includes(key));

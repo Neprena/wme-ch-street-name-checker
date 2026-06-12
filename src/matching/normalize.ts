@@ -66,6 +66,27 @@ const ABBREV_MAP = new Map(ABBREVIATIONS.map((r) => [r.abbrev, r]));
 const MAX_VARIANTS = 8;
 
 /**
+ * French/Italian function words whose presence often differs between Waze and
+ * the register ("Chemin de Montaz" vs "Chemin de la Montaz"). German articles
+ * are deliberately NOT stripped: they are integral to names like "Im Grund".
+ */
+const ARTICLES = new Set([
+  "de", "du", "des", "la", "le", "les",
+  "di", "da", "del", "della", "delle", "dei", "degli", "al", "alla", "ai",
+]);
+
+/** Article-stripped form of a K2 key; null when stripping would leave < 2 tokens. */
+export function stripArticles(key: string): string | null {
+  const tokens = key
+    .split(" ")
+    .filter((token) => !ARTICLES.has(token))
+    .map((token) => token.replace(/^[ld]'/, ""));
+  if (tokens.length < 2) return null;
+  const stripped = tokens.join(" ");
+  return stripped === key ? null : stripped;
+}
+
+/**
  * Expanded keys. Returns every plausible canonical form (multi-language
  * abbreviations like "pl." or "st." produce several variants).
  */
@@ -88,5 +109,11 @@ export function k2(name: string): string[] {
       .flatMap((v) => options.map((option) => [...v, option]))
       .slice(0, MAX_VARIANTS);
   });
-  return [...new Set(variants.map((v) => v.join(" ")))];
+  const keys = [...new Set(variants.map((v) => v.join(" ")))];
+  // Article-insensitive variants come LAST so stricter keys win in the cascade.
+  for (const key of [...keys]) {
+    const stripped = stripArticles(key);
+    if (stripped && !keys.includes(stripped)) keys.push(stripped);
+  }
+  return keys;
 }

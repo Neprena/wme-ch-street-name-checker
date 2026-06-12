@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TILE_SIZE_DEG, TileCache, TileFetcher, tileKeyToBbox, tileKeysForBbox } from "../src/geoadmin/tiles";
+import { TILE_SIZE_DEG, TileCache, TileFetcher, tileKeyForPoint, tileKeyToBbox, tileKeysForBbox } from "../src/geoadmin/tiles";
 import type { Bbox } from "../src/geoadmin/types";
 import { makeOfficial } from "./fixtures/swiss-names";
 
@@ -13,6 +13,11 @@ describe("tileKeysForBbox", () => {
     const keys = tileKeysForBbox([6.619, 46.519, 6.641, 46.541]);
     // spans 2 tile columns x 2 tile rows
     expect(keys.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("tileKeyForPoint matches the covering tile", () => {
+    const keys = tileKeysForBbox([6.681, 46.628, 6.684, 46.633]);
+    expect(keys).toContain(tileKeyForPoint(6.6828, 46.6303));
   });
 
   it("roundtrips with tileKeyToBbox", () => {

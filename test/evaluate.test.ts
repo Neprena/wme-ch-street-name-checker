@@ -84,6 +84,22 @@ describe("evaluateSegment", () => {
     }
   });
 
+  it("accepts route designations on highway segments", () => {
+    const v = evaluateSegment(
+      makeSegment({ roadType: 3 } as Partial<Segment>),
+      makeAddress("A9 - E62", ["A9", "E62"], null),
+      index,
+      { ...settings, checkedRoadTypes: [...settings.checkedRoadTypes, 3] },
+    );
+    expect(v.kind).toBe("ok");
+  });
+
+  it("does not accept route designations on plain streets", () => {
+    const v = evaluateSegment(makeSegment(), makeAddress("A9"), index, settings);
+    expect(v.kind).toBe("issue");
+    if (v.kind === "issue") expect(v.issue.status).toBe("NOT_FOUND");
+  });
+
   it("returns ok for an exact match", () => {
     const v = evaluateSegment(makeSegment(), makeAddress("Rue du Grand-Pont"), index, settings);
     expect(v.kind).toBe("ok");

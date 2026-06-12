@@ -141,6 +141,19 @@ export function stemKey(key: string): string | null {
   return stem.length >= 3 ? stem : null;
 }
 
+/** One route designation: A9, A 1, E62, N5, H18, T10 (optional letter suffix). */
+const ROUTE_DESIGNATION = /^[AENHT] ?\d{1,3}[a-z]?$/i;
+
+/**
+ * Highway-style names ("A9", "E62", "A9 - E62", "A1/E25") are Waze conventions
+ * for numbered routes; they never appear in the GeoNV street register, which
+ * only names streets inside localities.
+ */
+export function isRouteDesignation(name: string): boolean {
+  const parts = name.split(/\s*[-/|]\s*/).filter((p) => p.length > 0);
+  return parts.length > 0 && parts.every((part) => ROUTE_DESIGNATION.test(part.trim()));
+}
+
 /**
  * Article stripping without the two-token guard, for stem comparisons of names
  * that carry no way-type word ("La Bricoleta" -> "bricoleta").

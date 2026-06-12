@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WME CH Street Name Checker
 // @namespace    https://github.com/Neprena
-// @version      1.5.1
+// @version      1.5.2
 // @description  Validates Waze street names against the official Swiss street register (répertoire officiel des rues, swisstopo / geo.admin.ch)
 // @author       Yann Rapenne
 // @license      MIT
@@ -1028,6 +1028,11 @@
     const stem = (cleaned.length > 0 ? cleaned : rest).join(" ");
     return stem.length >= 3 ? stem : null;
   }
+  var ROUTE_DESIGNATION = /^[AENHT] ?\d{1,3}[a-z]?$/i;
+  function isRouteDesignation(name) {
+    const parts = name.split(/\s*[-/|]\s*/).filter((p) => p.length > 0);
+    return parts.length > 0 && parts.every((part) => ROUTE_DESIGNATION.test(part.trim()));
+  }
   function bareStem(key) {
     const stem = key.split(" ").filter((token) => !ARTICLES.has(token)).map((token) => token.replace(/^[ld]'/, "")).join(" ");
     return stem.length >= 3 ? stem : null;
@@ -1406,6 +1411,7 @@
   }
 
   // src/matching/evaluate.ts
+  var HIGHWAY_ROAD_TYPES = /* @__PURE__ */ new Set([3, 4, 6, 7]);
   function noteFor(entry) {
     const note = {};
     if (!entry.street.official) note.unofficial = true;
@@ -1441,6 +1447,9 @@
           fixable: suggestion !== null
         }
       };
+    }
+    if (HIGHWAY_ROAD_TYPES.has(segment.roadType) && isRouteDesignation(currentName)) {
+      return { kind: "ok" };
     }
     const locality = settings.cityScoping !== "off" && address.city?.name ? k1(address.city.name) : void 0;
     const match = index.lookup(currentName, locality);
@@ -2180,7 +2189,7 @@ ${statusChipRules}
     }
     buildFooter() {
       const footer = el("div", "chk-footer");
-      footer.appendChild(el("span", "chk-muted", `v${"1.5.1"} · `));
+      footer.appendChild(el("span", "chk-muted", `v${"1.5.2"} · `));
       const link = el("a", "", "Changelog");
       link.href = "https://github.com/Neprena/WME-CH-Street-Name-Checker/blob/main/CHANGELOG.md";
       link.target = "_blank";
@@ -2788,7 +2797,7 @@ ${statusChipRules}
     new EditPanelBox(sdk2, scanner, settings).init();
     registerShortcuts(sdk2, scanner, settings, { nextIssue: () => tab.selectNextIssue() });
     scanner.start();
-    log.info(`v${"1.5.1"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
+    log.info(`v${"1.5.2"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
   }
   main().catch((err) => log.error("Initialization failed", err));
 })();

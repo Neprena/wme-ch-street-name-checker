@@ -1,7 +1,7 @@
 import type { LineString } from "geojson";
 import type { Segment, SegmentAddress } from "wme-sdk-typings";
 import type { Settings } from "../settings";
-import { k1 } from "./normalize";
+import { isRouteDesignation, k1 } from "./normalize";
 import { compareNameToCandidate, type IndexedEntry, type OfficialIndex } from "./official-index";
 import { distanceToEntryM, FAR_STREET_M, NEAR_STREET_M, type NearestResult } from "./spatial";
 
@@ -43,6 +43,9 @@ export interface Issue {
   geometry: LineString;
   fixable: boolean;
 }
+
+/** Freeway, Ramp, Major Highway, Minor Highway. */
+const HIGHWAY_ROAD_TYPES = new Set([3, 4, 6, 7]);
 
 export type Verdict =
   | { kind: "ok" }
@@ -98,6 +101,13 @@ export function evaluateSegment(
         fixable: suggestion !== null,
       },
     };
+  }
+
+  // Numbered route designations (A9, E62, A9 - E62) are the Waze convention
+  // for highways and never exist in the register; accept them on highway-class
+  // segments instead of reporting noise.
+  if (HIGHWAY_ROAD_TYPES.has(segment.roadType) && isRouteDesignation(currentName)) {
+    return { kind: "ok" };
   }
 
   const locality =

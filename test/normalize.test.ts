@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { foldAccents, k0, k1, k2, stemKey } from "../src/matching/normalize";
+import { foldAccents, isRouteDesignation, k0, k1, k2, stemKey } from "../src/matching/normalize";
 
 describe("k0", () => {
   it("trims and NFC-normalizes", () => {
@@ -169,5 +169,19 @@ describe("k2 (expanded)", () => {
 
   it("keeps Italian names intact", () => {
     expect(k2("Via San Gottardo")).toEqual(["via san gottardo"]);
+  });
+});
+
+describe("isRouteDesignation", () => {
+  it("accepts Swiss and European route numbers", () => {
+    for (const name of ["A9", "A 1", "E62", "N5", "H18", "T10", "A9 - E62", "A1/E25", "A1 / E25"]) {
+      expect(isRouteDesignation(name), name).toBe(true);
+    }
+  });
+
+  it("rejects real street names and partial matches", () => {
+    for (const name of ["Route de Berne", "A9 > Lausanne", "9", "Avenue A9", "Saint-Roch", ""]) {
+      expect(isRouteDesignation(name), name).toBe(false);
+    }
   });
 });

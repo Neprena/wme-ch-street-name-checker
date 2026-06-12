@@ -3,6 +3,11 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [1.5.2] - 2026-06-12
+
+### Fixed
+- Freeways named with route designations ("A9", "E62", "A9 - E62", "A1/E25") were NOT_FOUND when freeway checking was enabled: numbered designations (A/E/N/H/T + number, single or combined) are now accepted on highway-class road types. The register never names highways; the Waze numbering convention is the correct one there.
+
 ## [1.5.1] - 2026-06-12
 
 ### Fixed

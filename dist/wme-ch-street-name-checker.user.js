@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WME CH Street Name Checker
 // @namespace    https://github.com/Neprena
-// @version      1.9.1
+// @version      1.10.0
 // @description  Validates Waze street names against the official Swiss street register (répertoire officiel des rues, swisstopo / geo.admin.ch)
 // @author       Yann Rapenne
 // @license      MIT
@@ -401,6 +401,8 @@
     legendWRONG_STREET: "valid name, but the official street underneath has another name",
     geometryMatching: "Geometry matching (official street under the segment)",
     geometryMatchingTitle: "Enables UNNAMED suggestions, wrong-street detection and disambiguation by distance",
+    viewportOnly: "Show only segments visible on the map",
+    viewportOnlyTitle: "Filters the list and counters to the area currently on screen (no rescan)",
     legendWRONG_CITY: "name exists, but in another locality (city scoping)",
     legendNOT_FOUND: "not found in the official register",
     legendUNNAMED: "checked road type without a street name, dashed line",
@@ -479,6 +481,8 @@
     legendWRONG_STREET: "nom valide, mais la rue officielle dessous porte un autre nom",
     geometryMatching: "Matching géométrique (rue officielle sous le segment)",
     geometryMatchingTitle: "Active les suggestions UNNAMED, la détection de mauvaise rue et la désambiguïsation par distance",
+    viewportOnly: "N'afficher que les segments visibles",
+    viewportOnlyTitle: "Filtre la liste et les compteurs sur la zone actuellement à l'écran (sans relancer de scan)",
     legendWRONG_CITY: "le nom existe, mais dans une autre localité (scoping)",
     legendNOT_FOUND: "introuvable dans le répertoire officiel",
     legendUNNAMED: "type de route vérifié sans nom, trait pointillé",
@@ -557,6 +561,8 @@
     legendWRONG_STREET: "gültiger Name, aber die amtliche Strasse darunter heisst anders",
     geometryMatching: "Geometrie-Matching (amtliche Strasse unter dem Segment)",
     geometryMatchingTitle: "Aktiviert UNNAMED-Vorschläge, Falsche-Strasse-Erkennung und Distanz-Disambiguierung",
+    viewportOnly: "Nur auf der Karte sichtbare Segmente anzeigen",
+    viewportOnlyTitle: "Filtert Liste und Zähler auf den aktuell sichtbaren Bereich (ohne erneuten Scan)",
     legendWRONG_CITY: "Name existiert, aber in einer anderen Ortschaft (Scoping)",
     legendNOT_FOUND: "nicht im amtlichen Verzeichnis",
     legendUNNAMED: "geprüfter Strassentyp ohne Namen, gestrichelt",
@@ -635,6 +641,8 @@
     legendWRONG_STREET: "nome valido, ma la strada ufficiale sottostante ha un altro nome",
     geometryMatching: "Matching geometrico (strada ufficiale sotto il segmento)",
     geometryMatchingTitle: "Attiva i suggerimenti UNNAMED, il rilevamento di strada errata e la disambiguazione per distanza",
+    viewportOnly: "Mostra solo i segmenti visibili sulla mappa",
+    viewportOnlyTitle: "Filtra l'elenco e i contatori sull'area attualmente visibile (senza nuova scansione)",
     legendWRONG_CITY: "il nome esiste, ma in un'altra località (scoping)",
     legendNOT_FOUND: "non presente nel repertorio ufficiale",
     legendUNNAMED: "tipo di strada verificato senza nome, linea tratteggiata",
@@ -2031,7 +2039,8 @@
     language: "auto",
     guidelineChecks: true,
     editPanelHelper: true,
-    geometryMatching: true
+    geometryMatching: true,
+    viewportOnly: true
   };
   var STORAGE_KEY = "wme-ch-name-check.settings";
   function migrateSettings(parsed) {
@@ -2237,6 +2246,22 @@ a.chk-geolink { text-decoration: none; border: 1px solid #ccc; border-radius: 3p
       (a, b) => SEVERITY_ORDER[a.status] - SEVERITY_ORDER[b.status] || b.issues.length - a.issues.length
     );
   }
+  function geometryIntersectsBbox(geometry, bbox) {
+    let minLon = Infinity;
+    let minLat = Infinity;
+    let maxLon = -Infinity;
+    let maxLat = -Infinity;
+    for (const point of geometry.coordinates) {
+      const lon = point[0];
+      const lat = point[1];
+      minLon = Math.min(minLon, lon);
+      minLat = Math.min(minLat, lat);
+      maxLon = Math.max(maxLon, lon);
+      maxLat = Math.max(maxLat, lat);
+    }
+    if (!Number.isFinite(minLon)) return false;
+    return minLon <= bbox[2] && maxLon >= bbox[0] && minLat <= bbox[3] && maxLat >= bbox[1];
+  }
   var TabUI = class {
     constructor(sdk2, scanner, settings) {
       this.sdk = sdk2;
@@ -2268,6 +2293,12 @@ a.chk-geolink { text-decoration: none; border: 1px solid #ccc; border-radius: 3p
       this.sdk.Events.on({
         eventName: "wme-selection-changed",
         eventHandler: () => this.syncSelection()
+      });
+      this.sdk.Events.on({
+        eventName: "wme-map-move-end",
+        eventHandler: () => {
+          if (this.settings.get().viewportOnly) this.render(this.scanner.getSnapshot(), true);
+        }
       });
       this.render(this.scanner.getSnapshot());
     }
@@ -2331,7 +2362,7 @@ a.chk-geolink { text-decoration: none; border: 1px solid #ccc; border-radius: 3p
     }
     buildFooter() {
       const footer = el("div", "chk-footer");
-      footer.appendChild(el("span", "chk-muted", `v${"1.9.1"} · `));
+      footer.appendChild(el("span", "chk-muted", `v${"1.10.0"} · `));
       const link = el("a", "", "Changelog");
       link.href = "https://github.com/Neprena/WME-CH-Street-Name-Checker/blob/main/CHANGELOG.md";
       link.target = "_blank";
@@ -2353,11 +2384,12 @@ a.chk-geolink { text-decoration: none; border: 1px solid #ccc; border-radius: 3p
     }
     render(snapshot, force = false) {
       const { state, issues, stats, officialStreetCount, progress, error } = snapshot;
+      const inViewport = this.inViewport(issues);
       let statusText = t(STATE_KEYS[state]);
       if (state === "fetching" && progress) statusText += ` ${progress.done}/${progress.total}`;
       if (state === "done") {
         statusText = t("stateDone", {
-          issues: issues.size,
+          issues: inViewport.length,
           ok: stats.ok + stats.okAlt,
           streets: officialStreetCount
         });
@@ -2368,21 +2400,37 @@ a.chk-geolink { text-decoration: none; border: 1px solid #ccc; border-radius: 3p
       this.unsavedBadge.textContent = snapshot.unsavedCount > 0 ? t("unsavedBadge", { n: snapshot.unsavedCount }) : "";
       if (!force && issues === this.lastRenderedIssues) return;
       this.lastRenderedIssues = issues;
-      const visible = this.visibleIssues(issues);
+      const visible = this.applyStatusFilters(inViewport);
       const groups = groupIssues(visible);
       this.orderedIssueIds = groups.flatMap((g) => g.issues.map((i) => i.segmentId));
-      this.renderChips(issues);
+      this.renderChips(inViewport);
       this.renderGroups(groups, visible.length, state);
     }
-    visibleIssues(issues) {
-      return [...issues.values()].filter(
+    /** Read the visible map extent; null (filter disabled) on any SDK failure. */
+    currentViewport() {
+      try {
+        return this.sdk.Map.getMapExtent();
+      } catch {
+        return null;
+      }
+    }
+    /** Issues restricted to the on-screen viewport, unless the filter is off. */
+    inViewport(issues) {
+      const all = [...issues.values()];
+      if (!this.settings.get().viewportOnly) return all;
+      const bbox = this.currentViewport();
+      if (!bbox) return all;
+      return all.filter((issue) => geometryIntersectsBbox(issue.geometry, bbox));
+    }
+    applyStatusFilters(issues) {
+      return issues.filter(
         (issue) => this.activeFilters.size === 0 || this.activeFilters.has(issue.status)
       );
     }
     renderChips(issues) {
       this.chipsBox.replaceChildren();
       const counts = /* @__PURE__ */ new Map();
-      for (const issue of issues.values()) {
+      for (const issue of issues) {
         counts.set(issue.status, (counts.get(issue.status) ?? 0) + 1);
       }
       for (const status of Object.keys(STATUS_STYLES)) {
@@ -2678,6 +2726,19 @@ a.chk-geolink { text-decoration: none; border: 1px solid #ccc; border-radius: 3p
       details.appendChild(toggle("guidelineChecks", "guidelineChecks", "guidelineChecksTitle"));
       details.appendChild(toggle("helperSetting", "editPanelHelper"));
       details.appendChild(toggle("geometryMatching", "geometryMatching", "geometryMatchingTitle"));
+      const viewportRow = el("div", "chk-settings-row");
+      const viewportLabel = el("label");
+      viewportLabel.title = t("viewportOnlyTitle");
+      const viewportCb = el("input");
+      viewportCb.type = "checkbox";
+      viewportCb.checked = settings.viewportOnly;
+      viewportCb.addEventListener("change", () => {
+        this.settings.update({ viewportOnly: viewportCb.checked });
+        this.render(this.scanner.getSnapshot(), true);
+      });
+      viewportLabel.append(viewportCb, t("viewportOnly"));
+      viewportRow.appendChild(viewportLabel);
+      details.appendChild(viewportRow);
       const scopingRow = el("div", "chk-settings-row");
       scopingRow.appendChild(el("span", "", t("scopingLabel")));
       const select = el("select");
@@ -2962,7 +3023,7 @@ a.chk-geolink { text-decoration: none; border: 1px solid #ccc; border-radius: 3p
     new EditPanelBox(sdk2, scanner, settings).init();
     registerShortcuts(sdk2, scanner, settings, { nextIssue: () => tab.selectNextIssue() });
     scanner.start();
-    log.info(`v${"1.9.1"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
+    log.info(`v${"1.10.0"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
   }
   main().catch((err) => log.error("Initialization failed", err));
 })();

@@ -1,3 +1,4 @@
+import type { LineString } from "geojson";
 import type { WmeSDK } from "wme-sdk-typings";
 import {
   fixGroup,
@@ -13,6 +14,7 @@ import type { Issue, IssueNote, IssueStatus } from "../matching/evaluate";
 import type { ScanSnapshot, Scanner } from "../scan";
 import { ALL_STATUSES, ROAD_TYPE_OPTIONS, type CityScoping, type Settings, type SettingsStore } from "../settings";
 import { mapGeoAdminUrlForGeometry } from "../geoadmin/links";
+import type { Bbox } from "../geoadmin/types";
 import { getLocale } from "../i18n";
 import { injectStyles } from "./styles";
 
@@ -118,6 +120,28 @@ export function groupIssues(issues: Iterable<Issue>): IssueGroup[] {
   );
 }
 
+/**
+ * True when the segment's bounding box overlaps the viewport bbox. Using a
+ * bbox overlap (rather than "a vertex falls inside") also keeps a long segment
+ * that crosses the screen without any vertex inside it.
+ */
+export function geometryIntersectsBbox(geometry: LineString, bbox: Bbox): boolean {
+  let minLon = Infinity;
+  let minLat = Infinity;
+  let maxLon = -Infinity;
+  let maxLat = -Infinity;
+  for (const point of geometry.coordinates) {
+    const lon = point[0] as number;
+    const lat = point[1] as number;
+    minLon = Math.min(minLon, lon);
+    minLat = Math.min(minLat, lat);
+    maxLon = Math.max(maxLon, lon);
+    maxLat = Math.max(maxLat, lat);
+  }
+  if (!Number.isFinite(minLon)) return false;
+  return minLon <= bbox[2] && maxLon >= bbox[0] && minLat <= bbox[3] && maxLat >= bbox[1];
+}
+
 export class TabUI {
   private pane!: HTMLElement;
   private statusLine!: HTMLElement;
@@ -148,6 +172,15 @@ export class TabUI {
     this.sdk.Events.on({
       eventName: "wme-selection-changed",
       eventHandler: () => this.syncSelection(),
+    });
+    // Track the visible viewport live: re-filter the already-scanned issues to
+    // what is on screen, without refetching or rescanning. The issues map is
+    // unchanged on a pan, so force past the identity guard in render().
+    this.sdk.Events.on({
+      eventName: "wme-map-move-end",
+      eventHandler: () => {
+        if (this.settings.get().viewportOnly) this.render(this.scanner.getSnapshot(), true);
+      },
     });
     this.render(this.scanner.getSnapshot());
   }
@@ -245,12 +278,15 @@ export class TabUI {
 
   private render(snapshot: ScanSnapshot, force = false): void {
     const { state, issues, stats, officialStreetCount, progress, error } = snapshot;
+    // Base set for the list and counters: the segments currently on screen
+    // (or all scanned ones when the viewport filter is off / unavailable).
+    const inViewport = this.inViewport(issues);
 
     let statusText = t(STATE_KEYS[state]);
     if (state === "fetching" && progress) statusText += ` ${progress.done}/${progress.total}`;
     if (state === "done") {
       statusText = t("stateDone", {
-        issues: issues.size,
+        issues: inViewport.length,
         ok: stats.ok + stats.okAlt,
         streets: officialStreetCount,
       });
@@ -263,28 +299,47 @@ export class TabUI {
       snapshot.unsavedCount > 0 ? t("unsavedBadge", { n: snapshot.unsavedCount }) : "";
 
     // Progress ticks reuse the same issues map: only the status line above
-    // changes, skip the expensive chips/groups DOM rebuild.
+    // changes, skip the expensive chips/groups DOM rebuild. Map moves force
+    // past this guard since the viewport (not the issues map) changed.
     if (!force && issues === this.lastRenderedIssues) return;
     this.lastRenderedIssues = issues;
 
-    const visible = this.visibleIssues(issues);
+    const visible = this.applyStatusFilters(inViewport);
     const groups = groupIssues(visible);
     // "next issue" follows the displayed order (severity, then volume)
     this.orderedIssueIds = groups.flatMap((g) => g.issues.map((i) => i.segmentId));
-    this.renderChips(issues);
+    this.renderChips(inViewport);
     this.renderGroups(groups, visible.length, state);
   }
 
-  private visibleIssues(issues: ReadonlyMap<number, Issue>): Issue[] {
-    return [...issues.values()].filter(
+  /** Read the visible map extent; null (filter disabled) on any SDK failure. */
+  private currentViewport(): Bbox | null {
+    try {
+      return this.sdk.Map.getMapExtent() as Bbox;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Issues restricted to the on-screen viewport, unless the filter is off. */
+  private inViewport(issues: ReadonlyMap<number, Issue>): Issue[] {
+    const all = [...issues.values()];
+    if (!this.settings.get().viewportOnly) return all;
+    const bbox = this.currentViewport();
+    if (!bbox) return all;
+    return all.filter((issue) => geometryIntersectsBbox(issue.geometry, bbox));
+  }
+
+  private applyStatusFilters(issues: Issue[]): Issue[] {
+    return issues.filter(
       (issue) => this.activeFilters.size === 0 || this.activeFilters.has(issue.status),
     );
   }
 
-  private renderChips(issues: ReadonlyMap<number, Issue>): void {
+  private renderChips(issues: Issue[]): void {
     this.chipsBox.replaceChildren();
     const counts = new Map<IssueStatus, number>();
-    for (const issue of issues.values()) {
+    for (const issue of issues) {
       counts.set(issue.status, (counts.get(issue.status) ?? 0) + 1);
     }
     for (const status of Object.keys(STATUS_STYLES) as IssueStatus[]) {
@@ -627,6 +682,21 @@ export class TabUI {
     details.appendChild(toggle("guidelineChecks", "guidelineChecks", "guidelineChecksTitle"));
     details.appendChild(toggle("helperSetting", "editPanelHelper"));
     details.appendChild(toggle("geometryMatching", "geometryMatching", "geometryMatchingTitle"));
+
+    // Display-only filter: refresh the rendered list, no rescan / re-evaluation.
+    const viewportRow = el("div", "chk-settings-row");
+    const viewportLabel = el("label");
+    viewportLabel.title = t("viewportOnlyTitle");
+    const viewportCb = el("input") as HTMLInputElement;
+    viewportCb.type = "checkbox";
+    viewportCb.checked = settings.viewportOnly;
+    viewportCb.addEventListener("change", () => {
+      this.settings.update({ viewportOnly: viewportCb.checked });
+      this.render(this.scanner.getSnapshot(), true);
+    });
+    viewportLabel.append(viewportCb, t("viewportOnly"));
+    viewportRow.appendChild(viewportLabel);
+    details.appendChild(viewportRow);
 
     const scopingRow = el("div", "chk-settings-row");
     scopingRow.appendChild(el("span", "", t("scopingLabel")));

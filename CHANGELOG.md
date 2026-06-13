@@ -3,6 +3,11 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [1.10.0] - 2026-06-14
+
+### Added
+- The side panel now lists only the segments currently visible on the map, and the list follows the view live as you pan or zoom — no rescan or extra register fetch needed, so navigating feels noticeably more fluid. The status counts and the colored chips reflect the same on-screen scope. A new "Show only segments visible on the map" setting (on by default) lets you turn the filter off to see the whole scanned area again.
+
 ## [1.9.1] - 2026-06-13
 
 ### Changed

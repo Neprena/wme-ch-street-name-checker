@@ -66,6 +66,8 @@ export interface Settings {
   editPanelHelper: boolean;
   /** Use official street geometries to match segments spatially. */
   geometryMatching: boolean;
+  /** List and counters show only segments currently within the map viewport. */
+  viewportOnly: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -83,6 +85,7 @@ export const DEFAULT_SETTINGS: Settings = {
   guidelineChecks: true,
   editPanelHelper: true,
   geometryMatching: true,
+  viewportOnly: true,
 };
 
 const STORAGE_KEY = "wme-ch-name-check.settings";

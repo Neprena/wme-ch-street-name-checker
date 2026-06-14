@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WME CH Street Name Checker
 // @namespace    https://github.com/Neprena
-// @version      1.11.0
+// @version      1.11.1
 // @description  Validates Waze street names against the official Swiss street register (répertoire officiel des rues, swisstopo / geo.admin.ch)
 // @author       Yann Rapenne
 // @license      MIT
@@ -2189,7 +2189,7 @@ ${tokens}
 .chk-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; flex-shrink: 0; }
 
 .chk-groups { display: flex; flex-direction: column; gap: 5px; max-height: 48vh; overflow-y: auto; }
-.chk-group { border: 1px solid var(--chk-border); border-radius: var(--chk-radius); background: var(--chk-surface); overflow: hidden; }
+.chk-group { flex-shrink: 0; border: 1px solid var(--chk-border); border-radius: var(--chk-radius); background: var(--chk-surface); }
 .chk-group-header { display: flex; align-items: center; gap: 6px; padding: 5px 8px; cursor: pointer; }
 .chk-group-header:hover { background: var(--chk-info-bg); }
 .chk-badge { display: inline-block; min-width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
@@ -2199,7 +2199,7 @@ ${statusChipRules}
 .chk-suggestion { font-weight: bold; color: var(--chk-primary); }
 .chk-note { color: var(--chk-muted); font-style: italic; }
 .chk-count { color: var(--chk-muted); background: var(--chk-bg); border: 1px solid var(--chk-border); border-radius: 9px; padding: 0 6px; font-size: 10px; }
-.chk-fix-all { font-size: 11px; padding: 3px 9px; border: none; border-radius: 6px; background: var(--chk-primary); color: var(--chk-primary-contrast); }
+.chk-fix-all { font-size: 11px; padding: 3px 9px; border: none; border-radius: 6px; background: var(--chk-primary); color: var(--chk-primary-contrast); white-space: nowrap; flex-shrink: 0; }
 .chk-fix-all:hover { filter: brightness(1.08); }
 .chk-fix-all:disabled { opacity: .6; cursor: default; }
 
@@ -2207,10 +2207,10 @@ ${statusChipRules}
 .chk-row { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 16px; cursor: pointer; }
 .chk-row:hover { background: var(--chk-info-bg); }
 .chk-row.chk-selected { background: var(--chk-info-bg); box-shadow: inset 2px 0 0 var(--chk-primary); }
-.chk-row-meta { color: var(--chk-muted); flex: 1; }
-.chk-locate { font-size: 13px; line-height: 1; padding: 0 5px; background: transparent; border: none; color: var(--chk-text); }
+.chk-row-meta { color: var(--chk-muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chk-locate { font-size: 13px; line-height: 1; padding: 0 5px; background: transparent; border: none; color: var(--chk-text); flex-shrink: 0; }
 .chk-locate:hover { color: var(--chk-primary); }
-a.chk-geolink { text-decoration: none; border: 1px solid var(--chk-border); border-radius: 4px; padding: 0 5px; color: var(--chk-primary); background: var(--chk-bg); }
+a.chk-geolink { text-decoration: none; border: 1px solid var(--chk-border); border-radius: 4px; padding: 0 5px; color: var(--chk-primary); background: var(--chk-bg); flex-shrink: 0; }
 
 .chk-section { border: 1px solid var(--chk-border); border-radius: var(--chk-radius); background: var(--chk-surface); overflow: hidden; }
 .chk-section > summary { display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-weight: bold; cursor: pointer; list-style: none; color: var(--chk-text); }
@@ -2418,7 +2418,7 @@ a.chk-geolink { text-decoration: none; border: 1px solid var(--chk-border); bord
       brand.append(
         el("span", "chk-brand-icon", "🇨🇭"),
         el("span", "chk-brand-title", "CH Names"),
-        el("span", "chk-brand-version", `v${"1.11.0"}`)
+        el("span", "chk-brand-version", `v${"1.11.1"}`)
       );
       const toolbar = el("div", "chk-toolbar");
       const rescanBtn = el("button", "chk-btn", t("rescan"));
@@ -3157,7 +3157,7 @@ a.chk-geolink { text-decoration: none; border: 1px solid var(--chk-border); bord
     new EditPanelBox(sdk2, scanner, settings).init();
     registerShortcuts(sdk2, scanner, settings, { nextIssue: () => tab.selectNextIssue() });
     scanner.start();
-    log.info(`v${"1.11.0"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
+    log.info(`v${"1.11.1"} ready (SDK ${sdk2.getSDKVersion()}, WME ${sdk2.getWMEVersion()})`);
   }
   main().catch((err) => log.error("Initialization failed", err));
 })();

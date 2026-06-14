@@ -3,6 +3,11 @@
 All notable changes to this project are documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [1.11.1] - 2026-06-14
+
+### Fixed
+- The side panel introduced in 1.11.0 had two layout glitches: the blue "Fix" button on a single-issue row was clipped by the card's rounded corner, and the issue list squeezed every group into the panel height instead of scrolling, so the cards collapsed into thin lines and no scrollbar appeared. The list now keeps each card at its natural height and scrolls, and the row buttons are shown in full.
+
 ## [1.11.0] - 2026-06-14
 
 ### Changed
